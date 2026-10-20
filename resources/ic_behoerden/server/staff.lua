@@ -1,6 +1,6 @@
 --[[
     ic_behoerden · Staff (OOC)
-    Schlussprüfung, Entscheidung nach Aktenlage, Kapazitäten, Sperrliste, Einstellungen und Kennzahlen.
+    Schlussprüfung, Entscheidung nach Aktenlage, Eingriff in das Register, Kapazitäten, Sperrliste, Einstellungen und Kennzahlen.
 ]]
 
 IC = IC or {}
@@ -25,12 +25,12 @@ function Sf.gate(ctx, p)
         IC.audit(actor(ctx), 'staff', 'Freigabe', a.caseNo, a.name)
         return ok()
     end
-    local note = U.trim(p.note or ''):sub(1, 500)
+    local note = U.ucut(U.trim(p.note or ''), 500)
     if U.ulen(note) < 10 then return fail('Bitte einen Grund angeben (mindestens 10 Zeichen).') end
     a.remark = 'Hinweis der Registerführung: ' .. note
     A.setStatus(a, 'nachbesserung', 'Registerführung', 'staff', 'Schlussprüfung nicht bestanden', note)
     IC.notify(a.applicant.charId, 'Für „' .. a.name .. '“ ist eine Nachbesserung erforderlich.', 'warn')
-    IC.audit(actor(ctx), 'staff', 'Zurückgewiesen', a.caseNo, note:sub(1, 60))
+    IC.audit(actor(ctx), 'staff', 'Zurückgewiesen', a.caseNo, U.ucut(note, 60))
     return ok()
 end
 
@@ -42,7 +42,7 @@ function Sf.written(ctx, p)
     if IC.now() - (a.vorpruefungAt or A.lastTs(a)) <= Config.Rules.escalateHours * R.HOUR then
         return fail('Dieser Antrag ist noch nicht überfällig (Frist: ' .. Config.Rules.escalateHours .. ' Stunden).')
     end
-    local reason = U.trim(p.reason or ''):sub(1, 1000)
+    local reason = U.ucut(U.trim(p.reason or ''), 1000)
     if U.ulen(reason) < 10 then return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).') end
     if p.decision ~= 'genehmigt' and p.decision ~= 'abgelehnt' then return fail('Bitte genehmigen oder ablehnen.') end
     a.decision = { decision = p.decision, reason = reason, by = 'Behörde (nach Aktenlage)', at = IC.now(), conditions = {} }
@@ -58,7 +58,7 @@ function Sf.written(ctx, p)
         A.refund(a)
         A.setStatus(a, 'abgelehnt', 'Behörde', 'staff', 'Entscheidung nach Aktenlage: abgelehnt', reason)
     end
-    IC.audit(actor(ctx), 'staff', 'Entscheidung nach Aktenlage', a.caseNo, p.decision .. ': ' .. reason:sub(1, 50))
+    IC.audit(actor(ctx), 'staff', 'Entscheidung nach Aktenlage', a.caseNo, p.decision .. ': ' .. U.ucut(reason, 50))
     for _, f in ipairs(a.founders) do
         IC.notify(f.charId, 'Entscheidung nach Aktenlage zu „' .. a.name .. '“: ' .. (p.decision == 'genehmigt' and 'Genehmigt' or 'Abgelehnt') .. '.', p.decision == 'genehmigt' and 'ok' or 'bad')
     end
@@ -75,13 +75,13 @@ function Sf.cap(ctx, p)
 end
 
 function Sf.blacklistAdd(ctx, p)
-    local term = U.trim(p.term or ''):sub(1, 60)
+    local term = U.ucut(U.trim(p.term or ''), 60)
     if U.ulen(term) < 3 then return fail('Der Begriff braucht mindestens 3 Zeichen.') end
     local n = U.normName(term)
     for _, b in ipairs(S.list('blacklist')) do
         if U.normName(b.term) == n then return fail('Dieser Begriff ist bereits gesperrt.') end
     end
-    local reason = U.trim(p.reason or ''):sub(1, 80)
+    local reason = U.ucut(U.trim(p.reason or ''), 80)
     S.put('blacklist', { id = 'B-' .. IC.nextSeq('black', 0), term = term, reason = reason ~= '' and reason or 'Staff' })
     IC.audit(actor(ctx), 'staff', 'Sperrliste', term, 'hinzugefügt')
     return ok()
@@ -108,6 +108,59 @@ function Sf.setting(ctx, p)
     if not IC.settings.set(key, p.value == true) then return fail('Unbekannte Einstellung.') end
     IC.audit(actor(ctx), 'staff', 'Einstellung', SETTING_LABEL[key] or key, p.value == true and 'eingeschaltet' or 'ausgeschaltet')
     return ok()
+end
+
+-- Eingriff des Staffs in das Register: Status eines Eintrags setzen (zum Beispiel sperren bei Regelverstößen). Immer mit Begründung.
+-- Die Gründer erfahren IC nur, dass die Registerführung gehandelt hat.
+local ENTITY_STATUS = { aktiv = 'wieder aktiv gesetzt', ruhend = 'ruhend gestellt', gesperrt = 'gesperrt', aufgeloest = 'aufgelöst' }
+
+function Sf.entityStatus(ctx, p)
+    local e = S.get('entities', tostring(p.id or ''))
+    if not e then return fail('Eintrag nicht gefunden.') end
+    local status = tostring(p.status or '')
+    if not ENTITY_STATUS[status] then return fail('Unbekannter Status.') end
+    if e.status == 'aufgeloest' then return fail('Ein aufgelöster Eintrag lässt sich nicht mehr ändern.') end
+    if e.status == status then return fail('Der Eintrag hat diesen Status bereits.') end
+    local reason = U.ucut(U.trim(p.reason or ''), 300)
+    if U.ulen(reason) < 10 then return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).') end
+    if status == 'aufgeloest' then e.dissolvedAt = IC.now() end
+    IC.register.setStatus(e, status, 'Registerführung', reason)
+    IC.audit(actor(ctx), 'staff', 'Eingriff Register', e.regNo, status .. ': ' .. U.ucut(reason, 60))
+    for _, m in ipairs(e.members or {}) do
+        if IC.register.isLeader(m.role) then
+            IC.notify(m.charId, 'Die Registerführung hat „' .. e.name .. '“ ' .. ENTITY_STATUS[status] .. '. Begründung: ' .. reason, status == 'aktiv' and 'ok' or 'warn')
+        end
+    end
+    return ok()
+end
+
+-- Hinweise für die Schlussprüfung. Nur, was sich aus den Daten ergibt.
+function Sf.gateHints(a)
+    local hints = {}
+    -- Länge und Zeichen waren schon beim Einreichen geprüft (der Anzeigename enthält außerdem den Rechtsformzusatz). Wichtig ist, ob sich seither etwas geändert hat.
+    local nc = R.nameCheck(a.name, a.legalForm, A.nameCtx(a.id))
+    local problem
+    for _, i in ipairs(nc.issues) do
+        if i.level == 'error' and (i.code == 'blacklist' or i.code == 'taken' or i.code == 'reserved' or i.code == 'similar') then problem = i.text break end
+    end
+    hints[#hints + 1] = problem and { ok = false, text = problem } or { ok = true, text = 'Der Name ist frei und steht nicht auf der Sperrliste.' }
+
+    local lines = {}
+    for _, f in ipairs(a.founders or {}) do
+        local others = S.list('entities', function(e)
+            if e.status == 'aufgeloest' then return false end
+            for _, m in ipairs(e.members or {}) do if m.charId == f.charId then return true end end
+            return false
+        end)
+        if #others > 0 then lines[#lines + 1] = f.name .. ': ' .. table.concat(U.map(U.sortBy(others, function(e) return e.regNo end), function(e) return e.regNo end), ', ') end
+    end
+    hints[#hints + 1] = #lines == 0 and { ok = true, text = 'Die Gründer sind an keinem anderen aktiven Eintrag beteiligt.' }
+        or { ok = false, text = 'Beteiligungen an anderen Einträgen: ' .. table.concat(lines, '; ') .. '.' }
+
+    local f = R.form(a.legalForm)
+    local n = #(a.founders or {})
+    hints[#hints + 1] = { ok = n >= f.minFounders, text = ('%d Gründungsmitglieder, erforderlich sind mindestens %d.'):format(n, f.minFounders) }
+    return hints
 end
 
 -- Startet die Sperrliste mit den Begriffen aus der Config. Läuft nur einmal: Wer die Liste später leert, bekommt sie nach einem Neustart nicht zurück.
@@ -169,7 +222,8 @@ function Sf.overview()
             rejectionRate = pct(rejected, decided), noShowRate = pct(noShow, #finished), outageRate = pct(outage, #finished),
             throughputDays = done > 0 and math.floor(days / done * 10 + 0.5) / 10 or 0, availabilityHours = Sf.availabilityHours(),
         },
-        gate = U.map(gate, U.deepcopy), escalations = U.map(esc, IC.register.stripOoc),
+        gate = U.map(gate, function(a) local c = U.deepcopy(a); c.hints = Sf.gateHints(a); return c end), escalations = U.map(esc, IC.register.stripOoc),
+        entities = U.map(U.sortBy(S.list('entities'), function(e) return e.name:lower() end), U.deepcopy),
         caps = caps, undergroundCap = IC.undergroundCap(), blacklist = blacklist, settings = IC.settings.all(),
         audit = (function() local out = {} for i = 1, math.min(80, #IC.auditLog) do out[i] = IC.auditLog[i] end return out end)(),
         applicationsAll = U.map(apps, IC.register.stripOoc),

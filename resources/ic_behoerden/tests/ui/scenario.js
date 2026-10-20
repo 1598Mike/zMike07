@@ -203,6 +203,7 @@ module.exports = async ({ lua, actor, openApp, log, assert }) => {
   await go(admin, 'staff', 'gate');
   const gate = await admin.locator('.main').innerText();
   assert(/Skater Club/.test(gate) && /Untergrund/.test(gate), 'Staff sieht die OOC-Angaben');
+  assert(/Der Name ist frei/.test(gate) && /3 Gründungsmitglieder, erforderlich sind mindestens 3/.test(gate) && /Beteiligungen an anderen Einträgen/.test(gate), 'Hinweise zur Schlussprüfung kommen aus den Daten: ' + gate.replace(/\n/g, ' ').slice(0, 400));
   const used0 = await S(admin, () => IC.S.d.staff.undergroundCap.used);
   await admin.locator('article', { hasText: 'Skater Club' }).locator('[data-act="gate-ok"]').click();
   await admin.click('[data-act="modal-yes"]'); await admin.settle();
@@ -359,6 +360,26 @@ module.exports = async ({ lua, actor, openApp, log, assert }) => {
   const nc2 = await lena.evaluate(() => IC.api('nameCheck', { name: 'Weißes Haus Bar', legalForm: 'einzel' }));
   assert.strictEqual(nc2.ok, true, 'Nach dem Entsperren ist der Name wieder frei');
   log('Sperrliste: sperren und entsperren wirkt sofort');
+
+  await go(admin, 'staff', 'register');
+  await admin.locator('tr', { hasText: 'Mustermann Bau' }).locator('[data-act="es-open"]').click();
+  await admin.waitForSelector('#es-reason');
+  await admin.fill('#es-reason', 'kurz');
+  await admin.click('[data-act="es-send"]'); await admin.settle();
+  assert(await admin.locator('.toast.bad').count() >= 1, 'Begründung ist Pflicht');
+  await admin.selectOption('#es-status', 'gesperrt');
+  await admin.fill('#es-reason', 'Wiederholte Verstöße gegen die Serverregeln.');
+  await admin.click('[data-act="es-send"]'); await admin.settle();
+  assert.strictEqual((await lua.call('dump')).entities.find((e) => e.name === 'Mustermann Bau').status, 'gesperrt');
+  await go(lena, 'gewerbeamt', 'entities');
+  assert(/gesperrt/i.test(await lena.locator('article', { hasText: 'Mustermann Bau' }).innerText()), 'Lena sieht die Sperre');
+  assert(/Registerführung/.test(await S(lena, () => IC.S.d.notices.map((n) => n.text).join(' '))), 'Lena wird von der Registerführung informiert, nicht vom Staff');
+  await admin.locator('tr', { hasText: 'Mustermann Bau' }).locator('[data-act="es-open"]').click();
+  await admin.waitForSelector('#es-reason');
+  await admin.fill('#es-reason', 'Nach Rücksprache wieder zugelassen.');
+  await admin.click('[data-act="es-send"]'); await admin.settle();
+  assert.strictEqual((await lua.call('dump')).entities.find((e) => e.name === 'Mustermann Bau').status, 'aktiv');
+  log('Staff greift in das Register ein: sperren, Begründung Pflicht, wieder freigeben');
 
   await go(admin, 'staff', 'caps');
   const cap0 = await S(admin, () => IC.S.d.staff.caps.find((c) => c.key === 'gastro').cap);

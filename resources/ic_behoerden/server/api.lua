@@ -132,7 +132,7 @@ local H = {
     sanctionIssue = P.sanction,
 
     staffGate = Sf.gate, staffWritten = Sf.written, staffCap = Sf.cap, staffBlacklistAdd = Sf.blacklistAdd,
-    staffBlacklistRemove = Sf.blacklistRemove, staffSetting = Sf.setting,
+    staffBlacklistRemove = Sf.blacklistRemove, staffSetting = Sf.setting, staffEntityStatus = Sf.entityStatus,
 }
 API.handlers = H
 

@@ -110,7 +110,7 @@ end
 -- Namensprüfung
 -- ---------------------------------------------------------------------------
 function A.nameCheck(ctx, p)
-    local name, form = tostring(p.name or ''):sub(1, 120), tostring(p.legalForm or ''):sub(1, 20)
+    local name, form = U.ucut(tostring(p.name or ''), 120), U.ucut(tostring(p.legalForm or ''), 20)
     local res = R.nameCheck(name, form, A.nameCtx(type(p.ignoreAppId) == 'string' and p.ignoreAppId or nil))
     -- Wie im Mock der Vorschau: "ok" bedeutet hier "Name ist zulässig", nicht "Anfrage gelungen".
     return { ok = res.ok, normalized = res.normalized, display = res.display, issues = res.issues }
@@ -293,9 +293,9 @@ function A.objection(ctx, p)
     if IC.now() > (a.objectionUntil or 0) then return fail('Die Einspruchsfrist von ' .. Config.Rules.objectionHours .. ' Stunden ist abgelaufen.') end
     local text = U.trim(p.text or '')
     if U.ulen(text) < 20 then return fail('Bitte den Einspruch mit mindestens 20 Zeichen begründen.') end
-    text = text:sub(1, 1000)
+    text = U.ucut(text, 1000)
     A.setStatus(a, 'einspruch', ctx.char.name, 'bürger', 'Einspruch eingelegt', text)
-    IC.audit(ctx.char.name, 'bürger', 'Einspruch', a.caseNo, text:sub(1, 80))
+    IC.audit(ctx.char.name, 'bürger', 'Einspruch', a.caseNo, U.ucut(text, 80))
     return ok()
 end
 
@@ -319,7 +319,7 @@ function A.review(ctx, p)
     local a = S.get('applications', tostring(p.id or ''))
     if not a or a.status ~= 'eingereicht' then return fail('Dieser Antrag wartet nicht auf die Vorprüfung.') end
     if A.conflicted(a, ctx.off.id) then return fail('Sie sind befangen und dürfen diesen Antrag nicht bearbeiten.') end
-    local msg = U.trim(p.message or ''):sub(1, 1000)
+    local msg = U.ucut(U.trim(p.message or ''), 1000)
     local name = ctx.off.name
     if p.result == 'ok' then
         a.vorpruefungAt = IC.now()
@@ -340,7 +340,7 @@ function A.review(ctx, p)
     else
         return fail('Unbekanntes Ergebnis.')
     end
-    IC.audit(name, 'beamter', 'Vorprüfung', a.caseNo, tostring(p.result) .. (msg ~= '' and (': ' .. msg:sub(1, 60)) or ''))
+    IC.audit(name, 'beamter', 'Vorprüfung', a.caseNo, tostring(p.result) .. (msg ~= '' and (': ' .. U.ucut(msg, 60)) or ''))
     return ok()
 end
 
@@ -386,11 +386,11 @@ function A.entityChange(ctx, p)
     local fee = Config.Rules.feeChange
     local change
     if p.type == 'name' then
-        local nc = R.nameCheck(tostring(p.value or ''):sub(1, 120), e.legalForm, A.nameCtx(nil, e.id))
+        local nc = R.nameCheck(U.ucut(tostring(p.value or ''), 120), e.legalForm, A.nameCtx(nil, e.id))
         if not nc.ok then return fail(R.firstError(nc.issues)) end
         change = { type = 'name', value = nc.display, at = IC.now() }
     elseif p.type == 'sitz' then
-        local v = U.trim(p.value or ''):sub(1, 60)
+        local v = U.ucut(U.trim(p.value or ''), 60)
         if U.ulen(v) < 3 then return fail('Bitte einen gültigen neuen Sitz angeben.') end
         change = { type = 'sitz', value = v, at = IC.now() }
     else

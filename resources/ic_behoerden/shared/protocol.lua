@@ -28,7 +28,7 @@ IC.protocol = {
         sanctionIssue = 'official',
 
         staffGate = 'staff', staffWritten = 'staff', staffCap = 'staff', staffBlacklistAdd = 'staff',
-        staffBlacklistRemove = 'staff', staffSetting = 'staff',
+        staffBlacklistRemove = 'staff', staffSetting = 'staff', staffEntityStatus = 'staff',
     },
     -- Anwendungen, die sich öffnen lassen, und welche Gruppe dafür nötig ist
     apps = {

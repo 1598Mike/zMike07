@@ -1728,7 +1728,8 @@ html.nui .main { overflow-y: auto; }
         throughputDays: 4.8,
         availabilityHours: 5.2,
       },
-      gate: gate.map((a) => IC.clone(a)),
+      gate: gate.map((a) => Object.assign(IC.clone(a), { hints: gateHints(a) })),
+      entities: s.entities.map((e) => IC.clone(e)).sort((a, b) => a.name.localeCompare(b.name, 'de')),
       escalations: escalations.map((a) => stripOoc(a)),
       caps, undergroundCap: s.staff.undergroundCap,
       blacklist: s.staff.blacklist.slice(),
@@ -1736,6 +1737,22 @@ html.nui .main { overflow-y: auto; }
       audit: s.audit.slice(0, 80),
       applicationsAll: apps.map(stripOoc),
     };
+  }
+
+  /* Hinweise zur Schlussprüfung, wie sie der Server aus den Daten ableitet */
+  function gateHints(a) {
+    const f = form(a.legalForm);
+    const nc = nameCheck(a.name, a.legalForm, a.id);
+    const problem = nc.issues.find((i) => i.level === 'error' && ['blacklist', 'taken', 'reserved', 'similar'].indexOf(i.code) !== -1);
+    const hints = [problem ? { ok: false, text: problem.text } : { ok: true, text: 'Der Name ist frei und steht nicht auf der Sperrliste.' }];
+    const lines = [];
+    a.founders.forEach((x) => {
+      const others = s.entities.filter((e) => e.status !== 'aufgeloest' && (e.members || []).some((m) => m.charId === x.charId || m.name === x.name));
+      if (others.length) lines.push(x.name + ': ' + others.map((e) => e.regNo).sort().join(', '));
+    });
+    hints.push(lines.length ? { ok: false, text: 'Beteiligungen an anderen Einträgen: ' + lines.join('; ') + '.' } : { ok: true, text: 'Die Gründer sind an keinem anderen aktiven Eintrag beteiligt.' });
+    hints.push({ ok: a.founders.length >= f.minFounders, text: a.founders.length + ' Gründungsmitglieder, erforderlich sind mindestens ' + f.minFounders + '.' });
+    return hints;
   }
 
   /* ---------- Handler ---------- */
@@ -2250,6 +2267,22 @@ html.nui .main { overflow-y: auto; }
     a.remark = 'Hinweis der Registerführung: ' + note;
     pushEvent(a, 'nachbesserung', 'Registerführung', 'staff', 'Schlussprüfung nicht bestanden', note);
     audit('Staff', 'staff', 'Zurückgewiesen', a.caseNo, note.slice(0, 60));
+    return ok();
+  };
+  H.staffEntityStatus = (p) => {
+    const e = s.entities.find((x) => x.id === p.id);
+    if (!e) return fail('Eintrag nicht gefunden.');
+    if (['aktiv', 'ruhend', 'gesperrt', 'aufgeloest'].indexOf(p.status) === -1) return fail('Unbekannter Status.');
+    if (e.status === 'aufgeloest') return fail('Ein aufgelöster Eintrag lässt sich nicht mehr ändern.');
+    if (e.status === p.status) return fail('Der Eintrag hat diesen Status bereits.');
+    const reason = String(p.reason || '').trim();
+    if (reason.length < 10) return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).');
+    const old = e.status;
+    e.status = p.status;
+    if (p.status === 'aufgeloest') e.dissolvedAt = now();
+    e.history = e.history || [];
+    e.history.push({ ts: now(), level: 'status', reason: reason + ' (' + old + ' → ' + p.status + ')', by: 'Registerführung' });
+    audit('Staff', 'staff', 'Eingriff Register', e.regNo, p.status + ': ' + reason.slice(0, 60));
     return ok();
   };
   H.staffWritten = (p) => {
@@ -4154,7 +4187,7 @@ html.nui .main { overflow-y: auto; }
 })();
 
 /* js/view-staff.js */
-/* IC-Behördenportal · Staff-Panel (OOC): Schlussprüfung, Kapazitäten, Sperrliste, Audit */
+/* IC-Behördenportal · Staff-Panel (OOC): Schlussprüfung, Register-Eingriff, Kapazitäten, Sperrliste, Audit */
 (function () {
   'use strict';
   const IC = window.IC;
@@ -4216,7 +4249,7 @@ html.nui .main { overflow-y: auto; }
             </div>
             <div class="grid g2">
               <div class="stack sm"><h4>Kapazität</h4>${under ? html`${c.meter(uc.used, uc.max)}<span class="small ${uc.used >= uc.max ? '' : 'muted'}">${uc.used} von ${uc.max} Untergrund-Plätzen belegt${uc.used >= uc.max ? '. Keine Plätze frei, Warteliste.' : '.'}</span>` : b ? html`${c.meter(b.used, b.cap)}<span class="small muted">${b.used} von ${b.cap} Plätzen in ${b.label} belegt.</span>` : html`<span class="small muted">Keine Kapazitätsgrenze.</span>`}</div>
-              <div class="stack sm"><h4>Hinweise</h4><ul class="checklist">${['Spielzeit der Gründer erfüllt die Voraussetzung', 'Keine Mehrfach-Gründer-Verknüpfung gefunden', 'Name steht nicht auf der Sperrliste'].map((t) => html`<li><label style="cursor:default;padding:5px 4px"><span class="chip ok">${ico('check')}</span><span>${t}</span></label></li>`)}</ul></div>
+              <div class="stack sm"><h4>Hinweise</h4><ul class="checklist">${(a.hints || []).map((h) => html`<li><label style="cursor:default;padding:5px 4px"><span class="chip ${h.ok ? 'ok' : 'warn'}">${ico(h.ok ? 'check' : 'alert')}</span><span>${h.text}</span></label></li>`)}</ul></div>
             </div>
           </div>
           <div class="sheet-f"><button class="btn danger" data-act="gate-back" data-id="${a.id}">Zurückweisen</button><button class="btn ok" data-act="gate-ok" data-id="${a.id}">${ico('check')}Freigeben und eintragen</button></div>
@@ -4299,8 +4332,34 @@ html.nui .main { overflow-y: auto; }
       ${c.sheet('Funktionen', html`<ul class="checklist">${items.map((i) => html`<li><label ${i[3] ? raw('style="cursor:default;opacity:.7"') : ''}><input type="checkbox" data-act="set-toggle" data-key="${i[0]}" ${st[i[0]] ? raw('checked') : ''} ${i[3] ? raw('disabled') : ''}><span><span class="strong">${i[1]}</span>${i[3] ? html` ${c.chip('Geplant für Phase 2', 'info')}` : ''}<span class="ci-note" style="display:block;font-size:13.5px">${i[2]}</span></span></label></li>`)}</ul>`, { icon: 'gear' })}`;
   }
 
+  /* ---------- Register: Eingriff des Staffs ---------- */
+  function register() {
+    const list = ST().entities;
+    return html`
+      <div class="page-head"><div><div class="crumbs">Staff-Panel · Register</div><h1>Register</h1><p class="sub">Alle Eintragungen mit ihren OOC-Angaben. Hier greifen Sie bei Regelverstößen ein. Jeder Eingriff braucht eine Begründung und steht im Audit-Log. Die Inhaber erfahren IC nur, dass die Registerführung gehandelt hat.</p></div>${oocBadge}</div>
+      ${c.sheet('Eintragungen', list.length ? html`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Nummer</th><th>Art</th><th>Status</th><th>OOC</th><th></th></tr></thead><tbody>${list.map((e) => html`<tr>
+        <td><div class="strong">${e.name}</div><div class="sub">${e.owner}${e.legacy ? ' · Bestand' : ''}</div></td>
+        <td>${c.tag(e.regNo)}</td>
+        <td>${formOf(e.legalForm).label}${e.branch ? html`<div class="sub">${branchOf(e.branch).label}</div>` : ''}</td>
+        <td>${c.orgChip(e.status)}</td>
+        <td>${e.ooc && e.ooc.category === 'untergrund' ? c.chip('Untergrund', 'bad') : e.ooc ? c.chip('Legal', 'ok') : '–'}</td>
+        <td class="act"><button class="btn sm" data-act="es-open" data-id="${e.id}" ${e.status === 'aufgeloest' ? raw('disabled') : ''}>Eingreifen</button></td></tr>`)}</tbody></table></div>`
+        : c.empty('folder', 'Noch keine Eintragungen', 'Eingetragene Unternehmen und Organisationen erscheinen hier.'), { icon: 'folder', flush: !!list.length })}`;
+  }
+
   /* ---------- Aktionen ---------- */
   Object.assign(IC.act, {
+    'es-open': (el) => {
+      const e = ST().entities.find((x) => x.id === el.dataset.id);
+      S.ui.es = { id: e.id, status: e.status === 'aktiv' ? 'gesperrt' : 'aktiv', reason: '' };
+      const options = ['aktiv', 'ruhend', 'gesperrt', 'aufgeloest'].filter((x) => x !== e.status);
+      IC.modal.open({ title: 'Eingriff: ' + e.name, icon: 'shield',
+        body: html`<div class="stack">${c.callout('warn', e.regNo + ' · aktuell ' + L.ORG[e.status].label, 'Der Eingriff gilt sofort und lässt sich nur durch einen weiteren Eingriff zurücknehmen. Aufgelöst ist endgültig.')}
+          ${c.field('es-status', 'Neuer Status', html`<select id="es-status" data-bind="ui.es.status">${options.map((x) => html`<option value="${x}" ${S.ui.es.status === x ? raw('selected') : ''}>${L.ORG[x].label}</option>`)}</select>`)}
+          ${c.field('es-reason', 'Begründung', html`<textarea id="es-reason" data-bind="ui.es.reason" placeholder="Pflicht. Die Inhaber erhalten den Text ohne OOC-Bezug."></textarea>`, { req: true })}</div>`,
+        footer: html`<button class="btn" data-act="modal-close">Abbrechen</button><button class="btn danger solid" data-act="es-send">Status ändern</button>` });
+    },
+    'es-send': async () => { const w = S.ui.es; const r = await IC.run('staffEntityStatus', { id: w.id, status: w.status, reason: w.reason }, { ok: 'Status geändert und protokolliert.' }); if (r.ok) IC.modal.close(true); },
     'gate-ok': async (el) => {
       const a = ST().gate.find((x) => x.id === el.dataset.id);
       const yes = await IC.confirm({ title: '„' + a.name + '“ freigeben?', icon: 'shield', yes: 'Freigeben und eintragen', text: 'Das Unternehmen beziehungsweise die Organisation wird eingetragen, die Registernummer vergeben und der Gewerbeschein ausgestellt. Danach laufen die Provisioning-Hooks.' });
@@ -4349,6 +4408,7 @@ html.nui .main { overflow-y: auto; }
         { id: 'overview', label: 'Übersicht', icon: 'chart' },
         { id: 'gate', label: 'Freigaben', icon: 'shield', badge: k.gate || null, badgeKind: 'warn' },
         { id: 'esc', label: 'Eskalationen', icon: 'alert', badge: k.escalations || null, badgeKind: 'bad' },
+        { id: 'register', label: 'Register', icon: 'folder' },
         { head: 'Regeln' },
         { id: 'caps', label: 'Kapazitäten', icon: 'layers' },
         { id: 'black', label: 'Sperrliste', icon: 'lock' },
@@ -4357,7 +4417,7 @@ html.nui .main { overflow-y: auto; }
       ];
     },
     railFoot: () => html`Dieser Bereich ist OOC. Beamte und Bürger sehen ihn nie.`,
-    views: { overview, gate, esc, caps, black, audit, settings },
+    views: { overview, gate, esc, register, caps, black, audit, settings },
   });
 })();
 

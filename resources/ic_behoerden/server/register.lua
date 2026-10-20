@@ -117,13 +117,14 @@ function G.create(app, via)
         id = 'E-' .. IC.nextSeq('entity', 0), kind = app.kind, regNo = regNo, name = app.name, legalForm = app.legalForm, branch = app.branch,
         status = #conds > 0 and 'probezeit' or 'aktiv', hq = U.siteLabel(app.property), propertyId = app.property and app.property.id or nil,
         owner = leader.name, signedBy = via or (app.decision and app.decision.by) or 'Registerführung', founded = IC.now(),
+        capital = (app.fees.capital or 0) > 0 and app.fees.capital or nil,
         validUntil = IC.now() + Config.Rules.certDays * R.DAY, memberCount = #app.founders, members = members, conditions = conds, history = {}, legacy = false, applicationId = app.id,
         ooc = app.ooc and U.deepcopy(app.ooc) or nil,
     }
     S.put('entities', e)
 
-    local held = (app.fees.register or 0) + (app.fees.capital or 0)
-    IC.pay.escrowOut(held)
+    -- Die Eintragungsgebühr geht jetzt an die Stadtkasse. Das Stammkapital bleibt in Verwahrung, bis der Hook entschieden hat (unten).
+    IC.pay.escrowOut(app.fees.register or 0)
     IC.pay.toTreasury(app.fees.register or 0, 'Eintragungsgebühr ' .. regNo)
 
     app.entityId = e.id
@@ -136,7 +137,20 @@ function G.create(app, via)
         IC.notify(m.charId, '„' .. e.name .. '“ ist eingetragen. Registernummer ' .. regNo .. '.', 'ok')
     end
 
-    IC.hook('onApproved', e, app)
+    -- Das Stammkapital gehört nach der Eintragung dem Unternehmen. Welches Konto das ist, weiß nur euer Server:
+    -- der Hook onApproved bucht es dorthin und gibt true zurück. Sonst geht das Geld an den Antragsteller zurück, es verschwindet nie.
+    local taken = IC.hook('onApproved', e, app)
+    local capital = app.fees.capital or 0
+    if capital > 0 then
+        if taken == true then
+            IC.pay.escrowOut(capital)
+            app.fees.capitalTo = 'unternehmen'
+        else
+            IC.pay.refund(app.applicant.charId, capital, 'Gewerbeamt: Stammkapital ' .. regNo .. ' (kein Firmenkonto angebunden)')
+            app.fees.capitalTo = 'antragsteller'
+        end
+        S.put('applications', app)
+    end
     IC.emit('ic_behoerden:entityCreated', e)
     IC.webhook('public', 'Neueintragung im Handelsregister', e.name .. ' · ' .. regNo .. ' · ' .. f.label)
     return e
@@ -159,7 +173,7 @@ local function importMembers(it, kind)
             local charId = tostring(m.charId)
             seen[charId] = true
             members[#members + 1] = {
-                charId = charId, name = U.trim(tostring(m.name or charId)):sub(1, 80),
+                charId = charId, name = U.ucut(U.trim(tostring(m.name or charId)), 80),
                 role = U.contains(roles, m.role) and m.role or fallback, share = tonumber(m.share),
             }
         end
@@ -215,7 +229,7 @@ function G.importOne(it, actor)
     if kind == 'fraktion' and oocIn == 'untergrund' then ooc = { category = 'untergrund', note = '' } end
     local e = {
         id = 'E-' .. IC.nextSeq('entity', 0), kind = kind, regNo = G.nextRegNo(f), name = name, legalForm = f.key, branch = branch,
-        status = 'aktiv', hq = it.hq and U.trim(tostring(it.hq)):sub(1, 80) or 'Ohne festen Standort', owner = leader.name, signedBy = 'Registerführung',
+        status = 'aktiv', hq = it.hq and U.ucut(U.trim(tostring(it.hq)), 80) or 'Ohne festen Standort', owner = leader.name, signedBy = 'Registerführung',
         founded = tonumber(it.founded) or now, validUntil = now + Config.Rules.certDays * R.DAY, memberCount = #members,
         members = members, conditions = {}, history = {}, legacy = true, legacyConfirmed = false,
         legacyDue = now + (Config.Legacy and Config.Legacy.confirmDays or 28) * R.DAY, importRef = ref, ooc = ooc,

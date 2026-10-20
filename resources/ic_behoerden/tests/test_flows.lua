@@ -862,3 +862,96 @@ T.test('Start: die Sperrliste wird nur einmal angelegt', function()
     IC.staff.seed()
     T.eq(S.count('blacklist'), 0, 'wer die Liste leert, bekommt sie nach einem Neustart nicht zurück')
 end)
+
+T.test('Stammkapital der GmbH: bleibt in Verwahrung, geht an das Unternehmen oder zurück an den Antragsteller', function()
+    local function approveGmbh(hookResult)
+        cast()
+        duty(KELLER)
+        Config.Hooks.onApproved = function(e, a)
+            H.bridge.hooks[#H.bridge.hooks + 1] = { 'onApproved', e.regNo, e.capital }
+            if type(hookResult) == 'function' then return hookResult(e, a) end
+            return hookResult
+        end
+        local d = draftEinzel('Rossi Bau', { legalForm = 'gmbh', branch = 'handwerk' })
+        local before = H.bridge.players[LENA].bank
+        local r = T.succeeds(submit(LENA, d), 'GmbH einreichen')
+        T.eq(r.paid, 800 + 2700 + 25000, 'Antragsgebühr, Eintragungsgebühr und Kapital werden fällig')
+        T.eq(IC.ledgerGet('escrow'), 2700 + 25000)
+        T.succeeds(H.call(KELLER, 'beamte', 'appReview', { id = r.id, result = 'ok' }))
+        local b = T.succeeds((bookFirst(LENA, 'vorstellung_unternehmen', r.id)))
+        local ap = S.get('appointments', b.id)
+        T.succeeds(checkinAt(ap, LENA))
+        T.succeeds(H.call(KELLER, 'beamte', 'apptCall', { id = ap.id }))
+        T.succeeds(H.call(KELLER, 'beamte', 'apptStart', { id = ap.id }))
+        local all = {}
+        for _, i in ipairs(Config.Checklists.vorstellung_unternehmen) do all[i.key] = true end
+        local res = T.succeeds(H.call(KELLER, 'beamte', 'apptDecide', { id = ap.id, decision = 'genehmigt', checklist = all }))
+        T.eq(res.outcome, 'eingetragen')
+        return before, r, S.get('applications', r.id)
+    end
+
+    -- Der Hook bucht das Kapital auf das Firmenkonto und meldet es mit true: das Geld verlässt die Verwahrung, es gibt keine Erstattung
+    local before, r, app = approveGmbh(true)
+    T.eq(H.bridge.hooks[#H.bridge.hooks][3], 25000, 'der Hook sieht das Kapital')
+    T.eq(IC.ledgerGet('escrow'), 0, 'Verwahrung ist leer')
+    T.eq(H.bridge.players[LENA].bank, before - 28500, 'Lena bekommt nichts zurück')
+    T.eq(app.fees.capitalTo, 'unternehmen')
+
+    -- Kein Firmenkonto angebunden (Hook gibt nichts zurück): das Kapital geht an den Antragsteller zurück, es verschwindet nicht
+    before, r, app = approveGmbh(nil)
+    T.eq(IC.ledgerGet('escrow'), 0)
+    T.eq(H.bridge.players[LENA].bank, before - 3500, 'nur die Gebühren sind weg, das Kapital kommt zurück')
+    T.eq(app.fees.capitalTo, 'antragsteller')
+    T.ok(H.lastNotice(LENA, '25.000'), 'Hinweis auf die Erstattung')
+
+    -- Ein Fehler im Hook ist kein Grund, das Geld zu behalten
+    local lines
+    lines, before = T.capture(approveGmbh, function() error('kaputt') end)
+    T.ok(lines[1] and lines[1]:find('Fehler im Hook onApproved', 1, true), 'der Fehler wird gemeldet')
+    T.eq(H.bridge.players[LENA].bank, before - 3500)
+    Config.Hooks.onApproved = function() end
+end)
+
+T.test('Staff: Eingriff in das Register mit Begründung, Hinweise zur Schlussprüfung aus echten Daten', function()
+    cast()
+    S.put('entities', { id = 'E-7', kind = 'unternehmen', regNo = 'HRA 1007', name = 'Test Bau', legalForm = 'einzel', branch = 'handwerk', status = 'aktiv', owner = 'Lena Brandt', founded = IC.now(), validUntil = IC.now() + 90 * DAY, memberCount = 1,
+        members = { { charId = 'c-lena', name = 'Lena Brandt', role = 'inhaber', share = 100 } }, conditions = {}, history = {}, ooc = { category = 'untergrund' } })
+    T.fails(H.call(LENA, 'gewerbeamt', 'staffEntityStatus', { id = 'E-7', status = 'gesperrt', reason = 'Regelverstoß wiederholt' }), 'nicht befugt')
+    T.fails(H.staff('staffEntityStatus', { id = 'E-9', status = 'gesperrt', reason = 'Regelverstoß wiederholt' }), 'nicht gefunden')
+    T.fails(H.staff('staffEntityStatus', { id = 'E-7', status = 'unsinn', reason = 'Regelverstoß wiederholt' }), 'Unbekannter Status')
+    T.fails(H.staff('staffEntityStatus', { id = 'E-7', status = 'gesperrt', reason = 'kurz' }), 'Begründung')
+    T.fails(H.staff('staffEntityStatus', { id = 'E-7', status = 'aktiv', reason = 'Alles in Ordnung hier' }), 'bereits')
+
+    T.succeeds(H.staff('staffEntityStatus', { id = 'E-7', status = 'gesperrt', reason = 'Wiederholte Regelverstöße im Rollenspiel.' }))
+    local e = S.get('entities', 'E-7')
+    T.eq(e.status, 'gesperrt'); T.ok(e.history[#e.history].reason:find('aktiv → gesperrt', 1, true), 'Statuswechsel steht in der Historie')
+    T.eq(e.history[#e.history].by, 'Registerführung', 'IC tritt die Registerführung auf, nie der Staff')
+    T.ok(H.lastNotice(LENA, 'Registerführung'), 'Inhaberin wird informiert'); T.notok(H.lastNotice(LENA, 'Admin'), 'ohne Namen des Staffs')
+    T.ok(IC.auditLog[1].actor:find('Admin', 1, true) and IC.auditLog[1].action == 'Eingriff Register', 'das Protokoll nennt den Staff')
+    T.succeeds(H.staff('staffEntityStatus', { id = 'E-7', status = 'aktiv', reason = 'Nach Rücksprache wieder zugelassen.' }))
+    T.eq(e.status, 'aktiv')
+    T.succeeds(H.staff('staffEntityStatus', { id = 'E-7', status = 'aufgeloest', reason = 'Endgültige Schließung wegen Verstoß.' }))
+    T.eq(e.status, 'aufgeloest'); T.ok(e.dissolvedAt)
+    T.fails(H.staff('staffEntityStatus', { id = 'E-7', status = 'aktiv', reason = 'Doch wieder zurück bitte.' }), 'aufgelöst')
+
+    -- Übersicht: der Staff sieht die Einträge mit OOC-Angaben, Beamte nie
+    local ov = T.succeeds(H.staff('bootstrap', { app = 'staff' }))
+    T.eq(#ov.staff.entities, 1); T.eq(ov.staff.entities[1].ooc.category, 'untergrund')
+    duty(KELLER)
+    local off = T.succeeds(H.call(KELLER, 'beamte', 'bootstrap', { app = 'beamte' }))
+    T.notok(off.register[1].ooc, 'Beamte sehen keine OOC-Angaben')
+
+    -- Hinweise zur Schlussprüfung
+    S.put('entities', { id = 'E-8', kind = 'unternehmen', regNo = 'HRA 1008', name = 'Zweite Firma', status = 'aktiv', members = { { charId = 'c-lena', name = 'Lena Brandt', role = 'inhaber' } }, conditions = {}, history = {} })
+    local a = { id = 'A-90', caseNo = 'GA-2025-0090', kind = 'fraktion', legalForm = 'ev', name = 'Polizeifreunde e.V.', status = 'staff_pruefung', applicant = { charId = 'c-lena', name = 'Lena Brandt' },
+        founders = { { charId = 'c-lena', name = 'Lena Brandt', role = 'vorsitz' }, { charId = 'c-tom', name = 'Tom Becker', role = 'mitglied' } }, events = {}, fees = { apply = 0, register = 0, capital = 0, paid = true } }
+    S.put('applications', a)
+    local hints = IC.staff.gateHints(a)
+    T.eq(#hints, 3)
+    T.eq(hints[1].ok, false); T.ok(hints[1].text:find('gesperrt', 1, true), 'Sperrliste: ' .. hints[1].text)
+    T.eq(hints[2].ok, false); T.ok(hints[2].text:find('HRA 1008', 1, true) and hints[2].text:find('Lena Brandt', 1, true), 'Beteiligung: ' .. hints[2].text)
+    T.eq(hints[3].ok, false); T.ok(hints[3].text:find('2 Gründungsmitglieder', 1, true) and hints[3].text:find('mindestens 3', 1, true), 'Mitgliederzahl: ' .. hints[3].text)
+    a.name, a.founders = 'Skater Club e.V.', { { charId = 'c-tom', name = 'Tom Becker', role = 'vorsitz' }, { charId = 'c-marco', name = 'Marco Rossi', role = 'mitglied' }, { charId = 'c-anna', name = 'Anna K.', role = 'mitglied' } }
+    hints = IC.staff.gateHints(a)
+    T.eq(hints[1].ok, true); T.eq(hints[2].ok, true); T.eq(hints[3].ok, true)
+end)

@@ -112,11 +112,13 @@ end
 -- ---------------------------------------------------------------------------
 -- Hooks und Ereignisse
 -- ---------------------------------------------------------------------------
+-- Ruft einen Hook aus Config.Hooks auf und gibt dessen Ergebnis zurück. Ein Fehler im Hook bricht nichts ab (Rückgabe nil).
 function IC.hook(name, ...)
     local fn = Config.Hooks and Config.Hooks[name]
-    if type(fn) ~= 'function' then return end
-    local ok, err = pcall(fn, ...)
-    if not ok then print('[ic_behoerden] Fehler im Hook ' .. name .. ': ' .. tostring(err)) end
+    if type(fn) ~= 'function' then return nil end
+    local ok, res = pcall(fn, ...)
+    if not ok then print('[ic_behoerden] Fehler im Hook ' .. name .. ': ' .. tostring(res)) return nil end
+    return res
 end
 
 function IC.emit(event, ...)

@@ -273,9 +273,15 @@ Config.PropertyProvider = nil
 -- ---------------------------------------------------------------------------
 Config.Hooks = {
     -- Eine Organisation oder ein Unternehmen wurde eingetragen und ist aktiv.
-    -- entity: Registereintrag. application: der Antrag. ooc ist nur gesetzt, wenn der Staff die Fraktionsart kennt.
+    -- entity: Registereintrag (entity.capital: Stammkapital in Dollar, nur bei GmbH und Stiftung). application: der Antrag.
+    -- entity.ooc ist nur gesetzt, wenn der Staff die Fraktionsart kennt.
     -- Beispiel: Job anlegen, Konto eröffnen, Lager erstellen, bei ooc.category == 'untergrund' die Gang-Mechaniken freischalten.
+    --
+    -- WICHTIG zum Stammkapital: Die Ressource hält es bis zur Eintragung in Verwahrung, kennt aber eure Firmenkonten nicht.
+    -- Bucht ihr es hier auf das Konto des Unternehmens, gebt true zurück. Gibt der Hook etwas anderes zurück (oder gar nichts),
+    -- erstattet die Ressource das Kapital dem Antragsteller. Es geht nie Geld verloren.
     onApproved = function(entity, application)
+        -- Beispiel:  exports.mein_banking:addMoney(entity.regNo, entity.capital); return true
     end,
     -- Der Status eines Eintrags hat sich geändert (aktiv, probezeit, ruhend, gesperrt, aufgeloest).
     onStatusChanged = function(entity, oldStatus, newStatus)

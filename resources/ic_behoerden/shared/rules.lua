@@ -262,11 +262,7 @@ local function str(v, max, multiline)
         v = v:gsub('[%c]', ' ')
     end
     v = U.trim(v)
-    if #v > max then
-        v = v:sub(1, max)
-        while #v > 0 and not utf8.len(v) do v = v:sub(1, -2) end
-    end
-    return v
+    return U.ucut(v, max)
 end
 
 local function inList(list, v)

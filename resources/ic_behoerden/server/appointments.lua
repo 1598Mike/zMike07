@@ -197,7 +197,7 @@ function P.book(ctx, p)
     local ap = {
         id = 'T-' .. IC.nextSeq('appt', 0), typeId = t.key, applicationId = app and app.id or nil, entityId = ent and ent.id or nil,
         start = start, minutes = t.minutes, status = 'gebucht', booker = me.charId, bookerName = me.name, attendees = att,
-        note = U.trim(p.note or ''):sub(1, 200), source = slot.source, createdAt = IC.now(),
+        note = U.ucut(U.trim(p.note or ''), 200), source = slot.source, createdAt = IC.now(),
     }
     S.put('appointments', ap)
     if app then
@@ -406,10 +406,10 @@ function P.decide(ctx, p)
 
     local dec = tostring(p.decision or '')
     if not decisionLabel(dec) then return fail('Bitte eine Entscheidung wählen.') end
-    local reason = U.trim(p.reason or ''):sub(1, 1000)
+    local reason = U.ucut(U.trim(p.reason or ''), 1000)
     local conds = {}
     for _, c in ipairs(type(p.conditions) == 'table' and p.conditions or {}) do
-        local x = U.trim(c):sub(1, 200)
+        local x = U.ucut(U.trim(c), 200)
         if x ~= '' and #conds < 10 then conds[#conds + 1] = x end
     end
     local checked = type(p.checklist) == 'table' and p.checklist or {}
@@ -493,7 +493,7 @@ function P.decide(ctx, p)
             IC.notify(f.charId, 'Entscheidung zu „' .. app.name .. '“: ' .. decisionLabel(dec) .. '.', kind)
         end
     end
-    IC.audit(name, 'beamter', 'Entscheidung', app and app.caseNo or ap.id, decisionLabel(dec) .. (reason ~= '' and (': ' .. reason:sub(1, 60)) or ''))
+    IC.audit(name, 'beamter', 'Entscheidung', app and app.caseNo or ap.id, decisionLabel(dec) .. (reason ~= '' and (': ' .. U.ucut(reason, 60)) or ''))
     IC.webhook('staff', 'Entscheidung ' .. (app and app.caseNo or ap.id), (app and app.name or t.label) .. ' · ' .. decisionLabel(dec) .. ' · ' .. name)
     local regNo
     if app and app.entityId then local en = S.get('entities', app.entityId); regNo = en and en.regNo end
@@ -540,7 +540,7 @@ function P.sanction(ctx, p)
     local ent = S.get('entities', tostring(p.entityId or ''))
     if not ent then return fail('Eintrag nicht gefunden.') end
     if not SANCTION[p.level] then return fail('Unbekannte Maßnahme.') end
-    local reason = U.trim(p.reason or ''):sub(1, 500)
+    local reason = U.ucut(U.trim(p.reason or ''), 500)
     if U.ulen(reason) < 10 then return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).') end
     local entry = { ts = IC.now(), level = p.level, reason = reason, by = ctx.off.name }
     if p.level == 'bussgeld' then entry.amount = U.clamp(U.round(tonumber(p.amount) or 500), 100, 10000) end
@@ -552,7 +552,7 @@ function P.sanction(ctx, p)
     S.put('entities', ent)
     if p.level == 'untersagung' then IC.register.setStatus(ent, 'gesperrt', ctx.off.name, reason) end
     if p.level == 'entzug' then IC.register.dissolve(ent, ctx.off.name) end
-    IC.audit(ctx.off.name, 'beamter', 'Sanktion: ' .. SANCTION[p.level], ent.regNo, reason:sub(1, 60))
+    IC.audit(ctx.off.name, 'beamter', 'Sanktion: ' .. SANCTION[p.level], ent.regNo, U.ucut(reason, 60))
     IC.hook('onSanction', ent, entry)
     for _, m in ipairs(ent.members or {}) do
         if IC.register.isLeader(m.role) then IC.notify(m.charId, 'Gegen „' .. ent.name .. '“ wurde eine Maßnahme verhängt: ' .. SANCTION[p.level] .. '.', 'warn') end

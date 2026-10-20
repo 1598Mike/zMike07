@@ -311,7 +311,8 @@
         throughputDays: 4.8,
         availabilityHours: 5.2,
       },
-      gate: gate.map((a) => IC.clone(a)),
+      gate: gate.map((a) => Object.assign(IC.clone(a), { hints: gateHints(a) })),
+      entities: s.entities.map((e) => IC.clone(e)).sort((a, b) => a.name.localeCompare(b.name, 'de')),
       escalations: escalations.map((a) => stripOoc(a)),
       caps, undergroundCap: s.staff.undergroundCap,
       blacklist: s.staff.blacklist.slice(),
@@ -319,6 +320,22 @@
       audit: s.audit.slice(0, 80),
       applicationsAll: apps.map(stripOoc),
     };
+  }
+
+  /* Hinweise zur Schlussprüfung, wie sie der Server aus den Daten ableitet */
+  function gateHints(a) {
+    const f = form(a.legalForm);
+    const nc = nameCheck(a.name, a.legalForm, a.id);
+    const problem = nc.issues.find((i) => i.level === 'error' && ['blacklist', 'taken', 'reserved', 'similar'].indexOf(i.code) !== -1);
+    const hints = [problem ? { ok: false, text: problem.text } : { ok: true, text: 'Der Name ist frei und steht nicht auf der Sperrliste.' }];
+    const lines = [];
+    a.founders.forEach((x) => {
+      const others = s.entities.filter((e) => e.status !== 'aufgeloest' && (e.members || []).some((m) => m.charId === x.charId || m.name === x.name));
+      if (others.length) lines.push(x.name + ': ' + others.map((e) => e.regNo).sort().join(', '));
+    });
+    hints.push(lines.length ? { ok: false, text: 'Beteiligungen an anderen Einträgen: ' + lines.join('; ') + '.' } : { ok: true, text: 'Die Gründer sind an keinem anderen aktiven Eintrag beteiligt.' });
+    hints.push({ ok: a.founders.length >= f.minFounders, text: a.founders.length + ' Gründungsmitglieder, erforderlich sind mindestens ' + f.minFounders + '.' });
+    return hints;
   }
 
   /* ---------- Handler ---------- */
@@ -833,6 +850,22 @@
     a.remark = 'Hinweis der Registerführung: ' + note;
     pushEvent(a, 'nachbesserung', 'Registerführung', 'staff', 'Schlussprüfung nicht bestanden', note);
     audit('Staff', 'staff', 'Zurückgewiesen', a.caseNo, note.slice(0, 60));
+    return ok();
+  };
+  H.staffEntityStatus = (p) => {
+    const e = s.entities.find((x) => x.id === p.id);
+    if (!e) return fail('Eintrag nicht gefunden.');
+    if (['aktiv', 'ruhend', 'gesperrt', 'aufgeloest'].indexOf(p.status) === -1) return fail('Unbekannter Status.');
+    if (e.status === 'aufgeloest') return fail('Ein aufgelöster Eintrag lässt sich nicht mehr ändern.');
+    if (e.status === p.status) return fail('Der Eintrag hat diesen Status bereits.');
+    const reason = String(p.reason || '').trim();
+    if (reason.length < 10) return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).');
+    const old = e.status;
+    e.status = p.status;
+    if (p.status === 'aufgeloest') e.dissolvedAt = now();
+    e.history = e.history || [];
+    e.history.push({ ts: now(), level: 'status', reason: reason + ' (' + old + ' → ' + p.status + ')', by: 'Registerführung' });
+    audit('Staff', 'staff', 'Eingriff Register', e.regNo, p.status + ': ' + reason.slice(0, 60));
     return ok();
   };
   H.staffWritten = (p) => {

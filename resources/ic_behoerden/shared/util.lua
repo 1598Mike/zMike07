@@ -171,6 +171,18 @@ function U.nameCharsOk(name)
     return rest == ''
 end
 
+-- Kürzt auf höchstens max Bytes, ohne ein UTF-8-Zeichen zu zerschneiden (ein halber Umlaut würde die Datenbank und die Oberfläche stören)
+function U.ucut(s, max)
+    s = tostring(s == nil and '' or s)
+    if #s <= max then return s end
+    s = s:sub(1, max)
+    for _ = 1, 3 do
+        if utf8.len(s) then break end
+        s = s:sub(1, -2)
+    end
+    return s
+end
+
 -- Länge in Zeichen (nicht Bytes) für UTF-8
 function U.ulen(s)
     local n = 0
