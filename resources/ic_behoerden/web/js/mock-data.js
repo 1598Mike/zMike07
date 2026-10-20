@@ -253,7 +253,7 @@
       entities.push({
         id, kind, regNo: reg, name, legalForm: form, branch, status, hq, owner, founded: t(-ageDays * 24 * 60), validUntil: t((90 - ageDays % 60) * 24 * 60),
         members: [{ name: owner, role: kind === 'fraktion' ? 'vorsitz' : (form === 'einzel' ? 'inhaber' : 'geschaeftsfuehrer'), share: kind === 'fraktion' ? null : 100 }],
-        conditions: [], legacy: false, ...extra,
+        conditions: [], legacy: false, signedBy: 'Dr. Keller', ...extra,
       });
     };
     E('E-1',  'unternehmen', 'HRA 1042', "Lena's Kiosk",                      'einzel', 'handel',     'aktiv',     'Vespucci Boulevard 12, Vespucci', me.name, 38, { memberCount: 2, myOwn: true, legacy: true, legacyConfirmed: false, legacyDue: t(60 * 24 * 20) });

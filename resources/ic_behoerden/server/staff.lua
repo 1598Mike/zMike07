@@ -95,15 +95,21 @@ function Sf.blacklistRemove(ctx, p)
     return ok()
 end
 
+local SETTING_LABEL = {
+    requireOfficials = 'Beamtenpflicht für Termine',
+    writtenProcedure = 'Schriftliches Verfahren (Notfallregel)',
+    undergroundViaPortal = 'Untergrund-Fraktionen über das Portal',
+    fourEyes = 'Vier-Augen-Prinzip für Organisationen',
+}
+
 function Sf.setting(ctx, p)
     local key = tostring(p.key or '')
     if key == 'fourEyes' then return fail('Das Vier-Augen-Prinzip kommt in Phase 2.') end
     if not IC.settings.set(key, p.value == true) then return fail('Unbekannte Einstellung.') end
-    IC.audit(actor(ctx), 'staff', 'Einstellung', key, tostring(p.value == true))
+    IC.audit(actor(ctx), 'staff', 'Einstellung', SETTING_LABEL[key] or key, p.value == true and 'eingeschaltet' or 'ausgeschaltet')
     return ok()
 end
 
--- Befüllt die Sperrliste beim ersten Start aus der Konfiguration
 -- Startet die Sperrliste mit den Begriffen aus der Config. Läuft nur einmal: Wer die Liste später leert, bekommt sie nach einem Neustart nicht zurück.
 function Sf.seed()
     if S.get('settings', 'seeded') or S.count('blacklist') > 0 then return end

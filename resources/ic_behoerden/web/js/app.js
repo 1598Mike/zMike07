@@ -64,6 +64,8 @@
     const d = await IC.api('bootstrap', { app: S.app });
     if (d && d.ok) {
       S.d = d; S.err = null;
+      /* Im Spiel gilt die Uhr des Servers, nicht die des Rechners: Fristen und "in 5 Minuten" stimmen dann überein. */
+      if (S.env.nui && d.now) IC.clock.offset = d.now - Date.now();
       const ids = d.notices.map((n) => n.id);
       if (S.seenNotice == null) S.seenNotice = ids.length ? Math.max.apply(null, ids) : 0;
       d.notices.filter((n) => n.id > S.seenNotice).forEach((n) => {

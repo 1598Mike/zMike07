@@ -149,7 +149,7 @@
     const ent = {
       id: 'E-' + nextNo('entity'), kind: a.kind, regNo, name: a.name, legalForm: a.legalForm, branch: a.branch,
       status: conds.length ? 'probezeit' : 'aktiv', hq: IC.siteLabel(a.property), propertyId: a.property ? a.property.id : null,
-      owner: a.founders[0].name, founded: now(), validUntil: now() + R.certDays * DAY, memberCount: a.founders.length,
+      owner: a.founders[0].name, signedBy: via || (a.decision && a.decision.by) || 'Registerführung', founded: now(), validUntil: now() + R.certDays * DAY, memberCount: a.founders.length,
       members: a.founders.map((x) => ({ name: x.name, role: x.role, share: x.share })),
       conditions: conds.map((text) => ({ id: 'C-' + nextNo('cond'), text, due: now() + 14 * DAY, done: false })),
       legacy: false, myOwn: a.founders.some((x) => x.charId === s.me.charId), applicationId: a.id,
@@ -875,10 +875,14 @@
     s.staff.blacklist.splice(i, 1);
     return ok();
   };
+  const SETTING_LABEL = {
+    requireOfficials: 'Beamtenpflicht für Termine', writtenProcedure: 'Schriftliches Verfahren (Notfallregel)',
+    undergroundViaPortal: 'Untergrund-Fraktionen über das Portal', fourEyes: 'Vier-Augen-Prinzip für Organisationen',
+  };
   H.staffSetting = (p) => {
     if (!(p.key in s.staff.settings)) return fail('Unbekannte Einstellung.');
     s.staff.settings[p.key] = !!p.value;
-    audit('Staff', 'staff', 'Einstellung', p.key, String(!!p.value));
+    audit('Staff', 'staff', 'Einstellung', SETTING_LABEL[p.key] || p.key, p.value ? 'eingeschaltet' : 'ausgeschaltet');
     return ok();
   };
 

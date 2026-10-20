@@ -784,7 +784,7 @@
      ==================================================================== */
   IC.registerApp('gewerbeamt', {
     title: 'Gewerbeamt', icon: 'building', def: 'home',
-    where: () => S.d.config.city + ' · Rathaus · Terminal 2',
+    where: () => S.d.config.city + (S.env.nui ? '' : ' · Rathaus · Terminal 2'),
     nav: () => {
       const d = S.d;
       const open = d.myApplications.filter((a) => L.OPEN_APP.indexOf(a.status) !== -1).length;

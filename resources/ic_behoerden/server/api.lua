@@ -48,9 +48,13 @@ local function myAppointments(charId)
     return U.map(U.sortBy(list, function(a) return a.start end), P.view)
 end
 
+-- Gewerbeamt und Bürgeramt sind ein Fenster mit zwei Startseiten: Wer an einem der beiden Terminals sitzt, kann in der Oberfläche
+-- zum anderen wechseln (die Kacheln "Termin im Bürgeramt" und "Meine Termine" führen dorthin). Tablet und Staff-Panel bleiben getrennt.
+local CITIZEN_APP = { gewerbeamt = true, buergeramt = true }
+
 function API.bootstrap(ctx, p)
     local app = ctx.session
-    if p and p.app and p.app ~= ctx.session then return fail('Diese Anwendung ist nicht geöffnet.') end
+    if p and p.app and p.app ~= ctx.session and not (CITIZEN_APP[p.app] and CITIZEN_APP[ctx.session]) then return fail('Diese Anwendung ist nicht geöffnet.') end
     IC.tick()
     local me = ctx.char
     local duty = D.list()

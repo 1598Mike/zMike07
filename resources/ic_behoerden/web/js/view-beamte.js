@@ -387,7 +387,7 @@
 
   IC.registerApp('beamte', {
     title: 'Beamten-Tablet', icon: 'stamp', def: 'today',
-    where: () => S.d.config.city + ' · Rathaus · Schalter ' + O().desk,
+    where: () => S.d.config.city + (S.env.nui ? '' : ' · Rathaus') + ' · Schalter ' + O().desk,
     nav: () => {
       const d = S.d;
       const wait = d.officialApps.filter((a) => a.status === 'eingereicht').length;
@@ -402,7 +402,9 @@
       if (S.ui.term && !S.ui.term.result) list.splice(1, 0, { id: 'term', label: 'Laufender Termin', icon: 'play' });
       return list;
     },
-    railFoot: () => html`<div class="stack sm"><span class="lbl">Nur Vorschau: Rang</span><select id="pv-rank" aria-label="Rang in der Vorschau wechseln" style="width:100%">${['anwaerter', 'sachbearbeiter', 'amtsleiter'].map((r) => html`<option value="${r}" ${O().rank === r ? raw('selected') : ''}>${L.RANK[r].label}</option>`)}</select><span class="xs">Der Rang bestimmt, welche Termine und Maßnahmen erlaubt sind.</span></div>`,
+    railFoot: () => S.env.nui
+      ? html`<div class="stack sm"><span class="lbl">Dienstnummer</span><span class="mono">${O().dienstnr}</span><span class="xs">Ihr Rang bestimmt, welche Termine und Maßnahmen erlaubt sind.</span></div>`
+      : html`<div class="stack sm"><span class="lbl">Nur Vorschau: Rang</span><select id="pv-rank" aria-label="Rang in der Vorschau wechseln" style="width:100%">${['anwaerter', 'sachbearbeiter', 'amtsleiter'].map((r) => html`<option value="${r}" ${O().rank === r ? raw('selected') : ''}>${L.RANK[r].label}</option>`)}</select><span class="xs">Der Rang bestimmt, welche Termine und Maßnahmen erlaubt sind.</span></div>`,
     views: { today, term, reviews, hours, breg, manual },
   });
 

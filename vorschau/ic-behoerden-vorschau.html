@@ -1006,7 +1006,7 @@ html.nui .main { overflow-y: auto; }
         <div><b>${isOrg ? 'Prüfung bis' : 'Gültig bis'}</b>${IC.fdate(e.validUntil)}</div>
         <div><b>Prüfcode</b><span class="mono">${checksum(e.regNo + e.name)}</span></div>
       </div>
-      <div class="c-foot"><div class="c-sign"><i>gez. Keller</i>Amtsleitung, Gewerbeamt</div><div>Dieses Dokument ist im Register hinterlegt und kann dort anhand der Registernummer geprüft werden.</div></div>
+      <div class="c-foot"><div class="c-sign"><i>gez. ${e.signedBy || 'Registerführung'}</i>Gewerbeamt</div><div>Dieses Dokument ist im Register hinterlegt und kann dort anhand der Registernummer geprüft werden.</div></div>
       <div class="c-stamp">${c.stamp(st[0], st[1], false)}</div>
     </div>`;
   };
@@ -1347,7 +1347,7 @@ html.nui .main { overflow-y: auto; }
       entities.push({
         id, kind, regNo: reg, name, legalForm: form, branch, status, hq, owner, founded: t(-ageDays * 24 * 60), validUntil: t((90 - ageDays % 60) * 24 * 60),
         members: [{ name: owner, role: kind === 'fraktion' ? 'vorsitz' : (form === 'einzel' ? 'inhaber' : 'geschaeftsfuehrer'), share: kind === 'fraktion' ? null : 100 }],
-        conditions: [], legacy: false, ...extra,
+        conditions: [], legacy: false, signedBy: 'Dr. Keller', ...extra,
       });
     };
     E('E-1',  'unternehmen', 'HRA 1042', "Lena's Kiosk",                      'einzel', 'handel',     'aktiv',     'Vespucci Boulevard 12, Vespucci', me.name, 38, { memberCount: 2, myOwn: true, legacy: true, legacyConfirmed: false, legacyDue: t(60 * 24 * 20) });
@@ -1478,8 +1478,8 @@ html.nui .main { overflow-y: auto; }
     const until = Math.max.apply(null, a) + R.banDays * DAY;
     return until > now() ? until : null;
   }
-  function eligibility(p, kind, isMe) {
-    const open = s.applications.filter((a) => isOpenApp(a) && a.applicant.charId === p.charId).length;
+  function eligibility(p, kind, isMe, excludeAppId) {
+    const open = s.applications.filter((a) => isOpenApp(a) && a.applicant.charId === p.charId && a.id !== excludeAppId).length;
     const checks = [
       { key: 'id', ok: !!p.hasId, text: 'Gültiger Personalausweis' },
       { key: 'age', ok: p.age >= R.minAge, text: 'Mindestalter ' + R.minAge + ' Jahre (IC)' },
@@ -1566,7 +1566,7 @@ html.nui .main { overflow-y: auto; }
     const ent = {
       id: 'E-' + nextNo('entity'), kind: a.kind, regNo, name: a.name, legalForm: a.legalForm, branch: a.branch,
       status: conds.length ? 'probezeit' : 'aktiv', hq: IC.siteLabel(a.property), propertyId: a.property ? a.property.id : null,
-      owner: a.founders[0].name, founded: now(), validUntil: now() + R.certDays * DAY, memberCount: a.founders.length,
+      owner: a.founders[0].name, signedBy: via || (a.decision && a.decision.by) || 'Registerführung', founded: now(), validUntil: now() + R.certDays * DAY, memberCount: a.founders.length,
       members: a.founders.map((x) => ({ name: x.name, role: x.role, share: x.share })),
       conditions: conds.map((text) => ({ id: 'C-' + nextNo('cond'), text, due: now() + 14 * DAY, done: false })),
       legacy: false, myOwn: a.founders.some((x) => x.charId === s.me.charId), applicationId: a.id,
@@ -1600,18 +1600,20 @@ html.nui .main { overflow-y: auto; }
       ap.status = 'beamter_ausfall';
       const a = ap.applicationId ? appById(ap.applicationId) : null;
       if (a && a.status === 'termin_gebucht') {
-        a.status = 'vorpruefung_ok';
+        a.status = a.restoreStatus || 'vorpruefung_ok';
         a.priority = true;
-        pushEvent(a, 'vorpruefung_ok', 'System', 'system', 'Termin ausgefallen: kein Beamter im Dienst', 'Ein Ersatztermin kann mit Vorrang gebucht werden.');
+        pushEvent(a, a.status, 'System', 'system', 'Termin ausgefallen: kein Beamter im Dienst', 'Ein Ersatztermin kann mit Vorrang gebucht werden.');
       }
       audit('System', 'system', 'Beamten-Ausfall', ap.id, 'Kein Beamter zum Terminbeginn im Dienst, kein Strike');
       if (ap.booker === s.me.charId) notice('Ihr Termin um ' + IC.ftime(ap.start) + ' Uhr ist ausgefallen, weil kein Beamter im Dienst war. Sie erhalten Vorrang bei einem Ersatztermin.', 'warn');
     });
     s.applications.forEach((a) => {
       if (a.status === 'nachbesserung' && t > lastTs(a) + R.fixDays * DAY) {
-        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Frist zur Nachbesserung abgelaufen');
+        refund(a);
+        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Frist zur Nachbesserung abgelaufen', 'Verwahrte Beträge wurden erstattet, die Antragsgebühr nicht.');
       } else if (a.status === 'vorpruefung_ok' && t > (a.vorpruefungAt || lastTs(a)) + R.bookDays * DAY) {
-        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Kein Termin innerhalb von ' + R.bookDays + ' Tagen gebucht');
+        refund(a);
+        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Kein Termin innerhalb von ' + R.bookDays + ' Tagen gebucht', 'Verwahrte Beträge wurden erstattet, die Antragsgebühr nicht.');
       }
     });
   }
@@ -1762,7 +1764,7 @@ html.nui .main { overflow-y: auto; }
     if (!f) return fail('Rechtsform fehlt.');
     const prev = d.id ? appById(d.id) : null;
     const resubmit = !!(prev && prev.status === 'nachbesserung');
-    const el = eligibility(s.me, d.kind, true);
+    const el = eligibility(s.me, d.kind, true, resubmit ? prev.id : null);
     if (!el.ok) errors.push({ field: 'elig', text: 'Voraussetzungen nicht erfüllt: ' + el.checks.filter((c) => !c.ok).map((c) => c.text).join('; ') });
     const nc = nameCheck(d.name, d.legalForm, d.id);
     if (!nc.ok) errors.push({ field: 'name', text: nc.issues.filter((i) => i.level === 'error').map((i) => i.text)[0] });
@@ -1890,6 +1892,23 @@ html.nui .main { overflow-y: auto; }
     return ok({ rows });
   };
 
+  /* ----- Mitgründer einladen (im Spiel antwortet der eingeladene Spieler, hier nach kurzer Zeit automatisch) ----- */
+  H.founderInvite = (p) => {
+    const person = s.nearby.find((x) => x.charId === p.charId);
+    if (!person) return fail('Diese Person ist nicht in Ihrer Nähe.');
+    const el = eligibility(person, 'unternehmen', false);
+    if (!el.ok) return fail(person.name + ' erfüllt die Voraussetzungen nicht: ' + el.checks.filter((c) => !c.ok).map((c) => c.text).join('; ') + '.');
+    s.invites = s.invites || {};
+    s.invites[p.charId] = { at: Date.now() };
+    return ok();
+  };
+  H.founderStatus = () => {
+    const statuses = {};
+    Object.keys(s.invites || {}).forEach((id) => { statuses[id] = Date.now() - s.invites[id].at >= 1200 ? 'ok' : 'pending'; });
+    return ok({ statuses });
+  };
+  H.founderCancel = (p) => { if (s.invites) delete s.invites[p.charId]; return ok(); };
+
   /* ----- Bürgeramt ----- */
   H.slotsList = (p) => {
     const type = typeOf(p.typeId);
@@ -1947,7 +1966,7 @@ html.nui .main { overflow-y: auto; }
       status: 'gebucht', booker: s.me.charId, bookerName: s.me.name, attendees: att, official: null, note: String(p.note || '').slice(0, 200), source: slot.source, createdAt: now(),
     };
     s.appointments.push(ap);
-    if (app) { app.status = 'termin_gebucht'; app.apptId = ap.id; app.priority = false; pushEvent(app, 'termin_gebucht', s.me.name, 'bürger', 'Vorstellungstermin gebucht', IC.fdt(ap.start) + ' Uhr'); }
+    if (app) { if (app.status !== 'termin_gebucht') app.restoreStatus = app.status; app.status = 'termin_gebucht'; app.apptId = ap.id; app.priority = false; pushEvent(app, 'termin_gebucht', s.me.name, 'bürger', 'Vorstellungstermin gebucht', IC.fdt(ap.start) + ' Uhr'); }
     audit(s.me.name, 'bürger', 'Termin gebucht', ap.id, type.label + ', ' + IC.fdt(ap.start));
     return ok({ id: ap.id });
   };
@@ -1960,7 +1979,7 @@ html.nui .main { overflow-y: auto; }
     if (late) s.me.strikes.push(now());
     ap.status = 'abgesagt';
     const a = ap.applicationId ? appById(ap.applicationId) : null;
-    if (a && a.status === 'termin_gebucht') { a.status = 'vorpruefung_ok'; pushEvent(a, 'vorpruefung_ok', s.me.name, 'bürger', 'Termin abgesagt'); }
+    if (a && a.status === 'termin_gebucht') { a.status = a.restoreStatus || 'vorpruefung_ok'; pushEvent(a, a.status, s.me.name, 'bürger', 'Termin abgesagt'); }
     audit(s.me.name, 'bürger', 'Termin abgesagt', ap.id, late ? 'Kurzfristig, 1 Strike' : 'Rechtzeitig');
     return ok({ strike: late });
   };
@@ -2094,7 +2113,7 @@ html.nui .main { overflow-y: auto; }
     ap.status = p.excused ? 'abgesagt' : 'nicht_erschienen';
     if (!p.excused && ap.booker === s.me.charId) s.me.strikes.push(now());
     const a = ap.applicationId ? appById(ap.applicationId) : null;
-    if (a && a.status === 'termin_gebucht') { a.status = 'vorpruefung_ok'; pushEvent(a, 'vorpruefung_ok', s.meOfficial.name, 'beamter', p.excused ? 'Termin entschuldigt' : 'Gründer nicht erschienen'); }
+    if (a && a.status === 'termin_gebucht') { a.status = a.restoreStatus || 'vorpruefung_ok'; pushEvent(a, a.status, s.meOfficial.name, 'beamter', p.excused ? 'Termin entschuldigt' : 'Gründer nicht erschienen'); }
     audit(s.meOfficial.name, 'beamter', p.excused ? 'Entschuldigt' : 'Nicht erschienen', ap.id, ap.bookerName);
     return ok();
   };
@@ -2220,6 +2239,7 @@ html.nui .main { overflow-y: auto; }
     const a = appById(p.id);
     if (!a || a.status !== 'staff_pruefung') return fail('Dieser Antrag wartet nicht auf die Schlussprüfung.');
     if (p.decision === 'freigeben') {
+      if (a.ooc && a.ooc.category === 'untergrund' && s.staff.undergroundCap.used >= s.staff.undergroundCap.max) return fail('Alle Untergrund-Plätze sind belegt. Erhöhen Sie die Kapazität oder weisen Sie den Antrag zurück.');
       registerEntity(a, 'Registerführung');
       audit('Staff', 'staff', 'Freigabe', a.caseNo, a.name);
       return ok();
@@ -2272,10 +2292,14 @@ html.nui .main { overflow-y: auto; }
     s.staff.blacklist.splice(i, 1);
     return ok();
   };
+  const SETTING_LABEL = {
+    requireOfficials: 'Beamtenpflicht für Termine', writtenProcedure: 'Schriftliches Verfahren (Notfallregel)',
+    undergroundViaPortal: 'Untergrund-Fraktionen über das Portal', fourEyes: 'Vier-Augen-Prinzip für Organisationen',
+  };
   H.staffSetting = (p) => {
     if (!(p.key in s.staff.settings)) return fail('Unbekannte Einstellung.');
     s.staff.settings[p.key] = !!p.value;
-    audit('Staff', 'staff', 'Einstellung', p.key, String(!!p.value));
+    audit('Staff', 'staff', 'Einstellung', SETTING_LABEL[p.key] || p.key, p.value ? 'eingeschaltet' : 'ausgeschaltet');
     return ok();
   };
 
@@ -2362,6 +2386,8 @@ html.nui .main { overflow-y: auto; }
     const d = await IC.api('bootstrap', { app: S.app });
     if (d && d.ok) {
       S.d = d; S.err = null;
+      /* Im Spiel gilt die Uhr des Servers, nicht die des Rechners: Fristen und "in 5 Minuten" stimmen dann überein. */
+      if (S.env.nui && d.now) IC.clock.offset = d.now - Date.now();
       const ids = d.notices.map((n) => n.id);
       if (S.seenNotice == null) S.seenNotice = ids.length ? Math.max.apply(null, ids) : 0;
       d.notices.filter((n) => n.id > S.seenNotice).forEach((n) => {
@@ -3047,6 +3073,32 @@ html.nui .main { overflow-y: auto; }
     w.founders.forEach((x) => { x.share = base; });
     w.founders[0].share += 100 - base * n;
   }
+  /* Fragt solange nach, bis jeder eingeladene Mitgründer geantwortet hat. Die Antwort kommt vom Server, nie aus dem Browser. */
+  const pollTimer = { t: null };
+  function pollFounders() {
+    clearTimeout(pollTimer.t);
+    const w = W();
+    if (!w.founders.some((x) => x.consent === 'pending')) return;
+    pollTimer.t = setTimeout(async () => {
+      if (W() !== w || S.app !== 'gewerbeamt') return;
+      const r = await IC.api('founderStatus', {});
+      if (r && r.ok && W() === w) {
+        let changed = false;
+        w.founders.slice().forEach((f) => {
+          const st = r.statuses[f.charId];
+          if (f.consent !== 'pending') return;
+          if (st === 'ok') { f.consent = 'ok'; changed = true; IC.toast(f.name + ' hat zugestimmt.', 'ok'); }
+          else if (st === 'no' || st === 'expired') {
+            w.founders = w.founders.filter((x) => x !== f); evenShares(w); changed = 'render';
+            IC.toast(f.name + (st === 'no' ? ' hat die Einladung abgelehnt.' : ' hat nicht rechtzeitig geantwortet.'), 'warn');
+          }
+        });
+        if (changed === 'render') IC.render(); else if (changed) IC.refresh('wiz-founders', 'wiz-side', 'wiz-nav');
+      }
+      pollFounders();
+    }, 800);
+  }
+
   function fixRoles(w) {
     if (w.kind !== 'unternehmen') return;
     const single = w.legalForm === 'einzel';
@@ -3086,21 +3138,24 @@ html.nui .main { overflow-y: auto; }
     },
     'wiz-light': lightRefresh,
     'wiz-ooc-cat': () => { IC.refresh('wiz-ooc-hint'); },
-    'wiz-add-founder': (el) => {
+    'wiz-add-founder': async (el) => {
       const w = W();
       const p = S.d.nearby.find((x) => x.charId === el.dataset.id);
       if (!p || w.founders.some((x) => x.charId === p.charId)) return;
+      const r = await IC.api('founderInvite', { charId: p.charId });
+      if (!r.ok) { IC.toast(r.error || 'Die Einladung ist nicht möglich.', 'bad'); return; }
       w.founders.push({ charId: p.charId, name: p.name, role: w.kind === 'fraktion' ? 'mitglied' : 'gesellschafter', share: w.kind === 'fraktion' ? null : 0, consent: 'pending' });
       evenShares(w);
       IC.render();
-      IC.toast('Einladung an ' + p.name + ' gesendet.', '');
-      setTimeout(() => {
-        const cur = W();
-        const f = cur.founders.find((x) => x.charId === p.charId);
-        if (cur === w && f && f.consent === 'pending') { f.consent = 'ok'; IC.refresh('wiz-founders', 'wiz-side', 'wiz-nav'); IC.toast(p.name + ' hat zugestimmt.', 'ok'); }
-      }, 1400);
+      IC.toast('Einladung an ' + p.name + ' gesendet. Die Zustimmung kommt direkt vom Mitgründer.', '');
+      pollFounders();
     },
-    'wiz-remove-founder': (el) => { const w = W(); w.founders.splice(Number(el.dataset.idx), 1); evenShares(w); IC.render(); },
+    'wiz-remove-founder': (el) => {
+      const w = W();
+      const f = w.founders[Number(el.dataset.idx)];
+      if (f && f.consent !== 'self') IC.api('founderCancel', { charId: f.charId });
+      w.founders.splice(Number(el.dataset.idx), 1); evenShares(w); IC.render();
+    },
     'wiz-even': () => { evenShares(W()); IC.render(); },
     'wiz-site-mode': (el) => { const w = W(); w.property = { mode: el.dataset.mode, id: null, label: '' }; IC.render(); },
     'wiz-prop': (el) => {
@@ -3362,7 +3417,7 @@ html.nui .main { overflow-y: auto; }
      ==================================================================== */
   IC.registerApp('gewerbeamt', {
     title: 'Gewerbeamt', icon: 'building', def: 'home',
-    where: () => S.d.config.city + ' · Rathaus · Terminal 2',
+    where: () => S.d.config.city + (S.env.nui ? '' : ' · Rathaus · Terminal 2'),
     nav: () => {
       const d = S.d;
       const open = d.myApplications.filter((a) => L.OPEN_APP.indexOf(a.status) !== -1).length;
@@ -3584,9 +3639,9 @@ html.nui .main { overflow-y: auto; }
     const d = S.d;
     const tk = d.myTicket;
     S.ui.qtype = S.ui.qtype || 'beratung';
-    const opts = cfg().appointmentTypes.filter((t) => (t.key === 'beratung' || t.key.indexOf('vorstellung') === 0) && typeAvail(t).ok);
+    const opts = cfg().appointmentTypes.filter((t) => t.key === 'beratung');
     return html`
-      <div class="page-head"><div><div class="crumbs">Bürgeramt · Spontan</div><h1>Wartenummer</h1><p class="sub">Ohne Termin vorbeigekommen? Mit einer Wartenummer werden Sie der Reihe nach aufgerufen, solange ein Beamter im Dienst ist.</p></div></div>
+      <div class="page-head"><div><div class="crumbs">Bürgeramt · Spontan</div><h1>Wartenummer</h1><p class="sub">Ohne Termin vorbeigekommen? Mit einer Wartenummer werden Sie der Reihe nach aufgerufen, solange ein Beamter im Dienst ist. Für eine Vorstellung buchen Sie einen Live-Termin.</p></div></div>
       ${c.board(d)}
       ${tk ? html`<div class="stack">
           ${tk.called ? c.callout('warn', 'Sie werden aufgerufen', 'Ihre Nummer ' + tk.no + ' wird an Schalter ' + d.board.calling.desk + ' bedient. Bitte dorthin gehen.', 'bell') : ''}
@@ -3667,7 +3722,7 @@ html.nui .main { overflow-y: auto; }
 
   IC.registerApp('buergeramt', {
     title: 'Bürgeramt', icon: 'calendar', def: 'book',
-    where: () => S.d.config.city + ' · Rathaus · Empfang',
+    where: () => S.d.config.city + (S.env.nui ? '' : ' · Rathaus · Empfang'),
     nav: () => {
       const n = S.d.myAppointments.filter((a) => OPEN.indexOf(a.status) !== -1).length;
       return [
@@ -4071,7 +4126,7 @@ html.nui .main { overflow-y: auto; }
 
   IC.registerApp('beamte', {
     title: 'Beamten-Tablet', icon: 'stamp', def: 'today',
-    where: () => S.d.config.city + ' · Rathaus · Schalter ' + O().desk,
+    where: () => S.d.config.city + (S.env.nui ? '' : ' · Rathaus') + ' · Schalter ' + O().desk,
     nav: () => {
       const d = S.d;
       const wait = d.officialApps.filter((a) => a.status === 'eingereicht').length;
@@ -4086,7 +4141,9 @@ html.nui .main { overflow-y: auto; }
       if (S.ui.term && !S.ui.term.result) list.splice(1, 0, { id: 'term', label: 'Laufender Termin', icon: 'play' });
       return list;
     },
-    railFoot: () => html`<div class="stack sm"><span class="lbl">Nur Vorschau: Rang</span><select id="pv-rank" aria-label="Rang in der Vorschau wechseln" style="width:100%">${['anwaerter', 'sachbearbeiter', 'amtsleiter'].map((r) => html`<option value="${r}" ${O().rank === r ? raw('selected') : ''}>${L.RANK[r].label}</option>`)}</select><span class="xs">Der Rang bestimmt, welche Termine und Maßnahmen erlaubt sind.</span></div>`,
+    railFoot: () => S.env.nui
+      ? html`<div class="stack sm"><span class="lbl">Dienstnummer</span><span class="mono">${O().dienstnr}</span><span class="xs">Ihr Rang bestimmt, welche Termine und Maßnahmen erlaubt sind.</span></div>`
+      : html`<div class="stack sm"><span class="lbl">Nur Vorschau: Rang</span><select id="pv-rank" aria-label="Rang in der Vorschau wechseln" style="width:100%">${['anwaerter', 'sachbearbeiter', 'amtsleiter'].map((r) => html`<option value="${r}" ${O().rank === r ? raw('selected') : ''}>${L.RANK[r].label}</option>`)}</select><span class="xs">Der Rang bestimmt, welche Termine und Maßnahmen erlaubt sind.</span></div>`,
     views: { today, term, reviews, hours, breg, manual },
   });
 
@@ -4134,7 +4191,7 @@ html.nui .main { overflow-y: auto; }
         ${kpi('No-Show-Quote', k.noShowRate + ' %', 'Ziel: höchstens 10 %')}
         ${kpi('Beamten-Ausfälle', k.outageRate + ' %', 'Ziel: höchstens 5 %')}
       </div>
-      <p class="small muted">Quoten und Durchlaufzeit sind in der Vorschau Beispielwerte, bis genug abgeschlossene Vorgänge vorliegen.</p>
+      <p class="small muted">${S.env.nui ? 'Quoten und Durchlaufzeit werden aus den abgeschlossenen Vorgängen berechnet. Mit wenigen Vorgängen schwanken sie stark.' : 'Quoten und Durchlaufzeit sind in der Vorschau Beispielwerte, bis genug abgeschlossene Vorgänge vorliegen.'}</p>
       <div class="grid g2">
         ${c.sheet('Offene Vorgänge nach Status', html`<div class="tbl-wrap"><table class="tbl"><tbody>${stat.map((x) => html`<tr><td>${c.appChip(x[0])}</td><td class="right num strong">${x[1]}</td></tr>`)}</tbody></table></div>`, { icon: 'chart', flush: true })}
         ${c.sheet('Zuletzt im Protokoll', html`<div class="tbl-wrap"><table class="tbl"><tbody>${ST().audit.slice(0, 6).map((a) => html`<tr><td class="nowrap muted small">${IC.ftime(a.ts)}</td><td><span class="strong">${a.action}</span> <span class="muted">${a.target}</span><div class="sub">${a.actor}</div></td></tr>`)}</tbody></table></div>`, { icon: 'list', flush: true })}
@@ -4235,11 +4292,11 @@ html.nui .main { overflow-y: auto; }
       ['requireOfficials', 'Beamtenpflicht für Termine', 'Termine sind nur buchbar, wenn Beamte im Dienst sind oder Sprechzeiten bestehen. Das ist die Kernregel des Systems.'],
       ['writtenProcedure', 'Schriftliches Verfahren (Notfallregel)', 'Überfällige Anträge lassen sich nach Aktenlage entscheiden, wenn ' + cfg().rules.escalateHours + ' Stunden kein Termin möglich war.'],
       ['undergroundViaPortal', 'Untergrund-Fraktionen über das Portal', 'Gruppen melden eine legale Hülle an und geben OOC-Angaben ab. Aus: Untergrund-Fraktionen werden komplett OOC vergeben.'],
-      ['fourEyes', 'Vier-Augen-Prinzip für Organisationen', 'Entscheidungen brauchen die Gegenzeichnung eines zweiten Beamten ab Rang Amtsleiter. Sinnvoll ab etwa fünf aktiven Beamten.'],
+      ['fourEyes', 'Vier-Augen-Prinzip für Organisationen', 'Entscheidungen brauchen die Gegenzeichnung eines zweiten Beamten ab Rang Amtsleiter. Sinnvoll ab etwa fünf aktiven Beamten.', true],
     ];
     return html`
       <div class="page-head"><div><div class="crumbs">Staff-Panel · Einstellungen</div><h1>Einstellungen</h1><p class="sub">Funktionen ein- und ausschalten. Änderungen wirken sofort und werden protokolliert.</p></div>${oocBadge}</div>
-      ${c.sheet('Funktionen', html`<ul class="checklist">${items.map((i) => html`<li><label><input type="checkbox" data-act="set-toggle" data-key="${i[0]}" ${st[i[0]] ? raw('checked') : ''}><span><span class="strong">${i[1]}</span><span class="ci-note" style="display:block;font-size:13.5px">${i[2]}</span></span></label></li>`)}</ul>`, { icon: 'gear' })}`;
+      ${c.sheet('Funktionen', html`<ul class="checklist">${items.map((i) => html`<li><label ${i[3] ? raw('style="cursor:default;opacity:.7"') : ''}><input type="checkbox" data-act="set-toggle" data-key="${i[0]}" ${st[i[0]] ? raw('checked') : ''} ${i[3] ? raw('disabled') : ''}><span><span class="strong">${i[1]}</span>${i[3] ? html` ${c.chip('Geplant für Phase 2', 'info')}` : ''}<span class="ci-note" style="display:block;font-size:13.5px">${i[2]}</span></span></label></li>`)}</ul>`, { icon: 'gear' })}`;
   }
 
   /* ---------- Aktionen ---------- */

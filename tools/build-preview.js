@@ -25,7 +25,10 @@ const js = scripts
   .map((rel) => '/* ' + rel + ' */\n' + fs.readFileSync(path.join(web, rel), 'utf8'))
   .join('\n')
   .replace(/<\/script/gi, '<\\/script');
-const fontLinks = [...index.matchAll(/<link rel="stylesheet" href="(https:\/\/fonts\.googleapis\.com[^"]+)">/g)].map((m) => m[0]).join('\n');
+/* Die Vorschau lädt die Schriften von Google Fonts. Im Spiel liegen sie lokal in web/fonts (tools/fetch-fonts.js). */
+const fontLinks = require('./fonts.json')
+  .map((f) => '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?' + f + '&display=swap">')
+  .join('\n');
 const title = (index.match(/<title>([^<]+)<\/title>/) || [, 'IC-Behördenportal'])[1];
 
 let out;

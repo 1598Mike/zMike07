@@ -100,7 +100,7 @@
         <div><b>${isOrg ? 'Prüfung bis' : 'Gültig bis'}</b>${IC.fdate(e.validUntil)}</div>
         <div><b>Prüfcode</b><span class="mono">${checksum(e.regNo + e.name)}</span></div>
       </div>
-      <div class="c-foot"><div class="c-sign"><i>gez. Keller</i>Amtsleitung, Gewerbeamt</div><div>Dieses Dokument ist im Register hinterlegt und kann dort anhand der Registernummer geprüft werden.</div></div>
+      <div class="c-foot"><div class="c-sign"><i>gez. ${e.signedBy || 'Registerführung'}</i>Gewerbeamt</div><div>Dieses Dokument ist im Register hinterlegt und kann dort anhand der Registernummer geprüft werden.</div></div>
       <div class="c-stamp">${c.stamp(st[0], st[1], false)}</div>
     </div>`;
   };

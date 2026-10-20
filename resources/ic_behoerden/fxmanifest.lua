@@ -48,5 +48,6 @@ ui_page 'web/index.html'
 files {
     'web/index.html',
     'web/css/*.css',
+    'web/fonts/*.woff2',
     'web/js/*.js',
 }

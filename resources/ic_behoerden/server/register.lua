@@ -116,8 +116,8 @@ function G.create(app, via)
     local e = {
         id = 'E-' .. IC.nextSeq('entity', 0), kind = app.kind, regNo = regNo, name = app.name, legalForm = app.legalForm, branch = app.branch,
         status = #conds > 0 and 'probezeit' or 'aktiv', hq = U.siteLabel(app.property), propertyId = app.property and app.property.id or nil,
-        owner = leader.name, founded = IC.now(), validUntil = IC.now() + Config.Rules.certDays * R.DAY, memberCount = #app.founders,
-        members = members, conditions = conds, history = {}, legacy = false, applicationId = app.id,
+        owner = leader.name, signedBy = via or (app.decision and app.decision.by) or 'Registerführung', founded = IC.now(),
+        validUntil = IC.now() + Config.Rules.certDays * R.DAY, memberCount = #app.founders, members = members, conditions = conds, history = {}, legacy = false, applicationId = app.id,
         ooc = app.ooc and U.deepcopy(app.ooc) or nil,
     }
     S.put('entities', e)
@@ -215,7 +215,7 @@ function G.importOne(it, actor)
     if kind == 'fraktion' and oocIn == 'untergrund' then ooc = { category = 'untergrund', note = '' } end
     local e = {
         id = 'E-' .. IC.nextSeq('entity', 0), kind = kind, regNo = G.nextRegNo(f), name = name, legalForm = f.key, branch = branch,
-        status = 'aktiv', hq = it.hq and U.trim(tostring(it.hq)):sub(1, 80) or 'Ohne festen Standort', owner = leader.name,
+        status = 'aktiv', hq = it.hq and U.trim(tostring(it.hq)):sub(1, 80) or 'Ohne festen Standort', owner = leader.name, signedBy = 'Registerführung',
         founded = tonumber(it.founded) or now, validUntil = now + Config.Rules.certDays * R.DAY, memberCount = #members,
         members = members, conditions = {}, history = {}, legacy = true, legacyConfirmed = false,
         legacyDue = now + (Config.Legacy and Config.Legacy.confirmDays or 28) * R.DAY, importRef = ref, ooc = ooc,

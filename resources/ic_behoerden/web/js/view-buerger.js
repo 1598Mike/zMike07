@@ -282,7 +282,7 @@
 
   IC.registerApp('buergeramt', {
     title: 'Bürgeramt', icon: 'calendar', def: 'book',
-    where: () => S.d.config.city + ' · Rathaus · Empfang',
+    where: () => S.d.config.city + (S.env.nui ? '' : ' · Rathaus · Empfang'),
     nav: () => {
       const n = S.d.myAppointments.filter((a) => OPEN.indexOf(a.status) !== -1).length;
       return [

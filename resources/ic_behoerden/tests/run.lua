@@ -32,6 +32,7 @@ local files = {
     'tests/test_persist.lua',
     'tests/test_net.lua',
     'tests/test_bridge.lua',
+    'tests/test_client.lua',
 }
 for _, f in ipairs(files) do
     local fh = io.open(f, 'r')

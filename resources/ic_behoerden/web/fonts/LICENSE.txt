@@ -1,0 +1,10 @@
+Schriften der Oberfläche (Teilmenge "latin", unverändert von Google Fonts übernommen):
+
+  Barlow und Barlow Semi Condensed   The Barlow Project Authors
+  IBM Plex Mono                      IBM Corp.
+  Source Serif 4                     Adobe
+  Doto                               The Doto Project Authors
+
+Alle Schriften stehen unter der SIL Open Font License, Version 1.1 (https://openfontlicense.org).
+Sie dürfen frei genutzt, eingebettet und weitergegeben werden, solange dieser Hinweis erhalten bleibt und die Schriften nicht für sich allein verkauft werden.
+Erneuern lassen sich die Dateien mit "node tools/fetch-fonts.js".

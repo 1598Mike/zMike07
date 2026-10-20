@@ -1,0 +1,16 @@
+{
+  "name": "zmike07-ic-behoerden",
+  "private": true,
+  "description": "IC-Gründung von Unternehmen und Fraktionen für FiveM: Gewerbeamt und Bürgeramt mit Terminvergabe",
+  "scripts": {
+    "test": "npm run test:lua && npm run test:ui",
+    "test:lua": "cd resources/ic_behoerden && lua5.4 tests/run.lua",
+    "test:ui": "cd resources/ic_behoerden && node tests/ui/e2e-server.js",
+    "build:preview": "node tools/build-preview.js",
+    "build:preview:fragment": "node tools/build-preview.js --fragment",
+    "fonts": "node tools/fetch-fonts.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

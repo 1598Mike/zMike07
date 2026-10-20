@@ -35,7 +35,7 @@
         ${kpi('No-Show-Quote', k.noShowRate + ' %', 'Ziel: höchstens 10 %')}
         ${kpi('Beamten-Ausfälle', k.outageRate + ' %', 'Ziel: höchstens 5 %')}
       </div>
-      <p class="small muted">Quoten und Durchlaufzeit sind in der Vorschau Beispielwerte, bis genug abgeschlossene Vorgänge vorliegen.</p>
+      <p class="small muted">${S.env.nui ? 'Quoten und Durchlaufzeit werden aus den abgeschlossenen Vorgängen berechnet. Mit wenigen Vorgängen schwanken sie stark.' : 'Quoten und Durchlaufzeit sind in der Vorschau Beispielwerte, bis genug abgeschlossene Vorgänge vorliegen.'}</p>
       <div class="grid g2">
         ${c.sheet('Offene Vorgänge nach Status', html`<div class="tbl-wrap"><table class="tbl"><tbody>${stat.map((x) => html`<tr><td>${c.appChip(x[0])}</td><td class="right num strong">${x[1]}</td></tr>`)}</tbody></table></div>`, { icon: 'chart', flush: true })}
         ${c.sheet('Zuletzt im Protokoll', html`<div class="tbl-wrap"><table class="tbl"><tbody>${ST().audit.slice(0, 6).map((a) => html`<tr><td class="nowrap muted small">${IC.ftime(a.ts)}</td><td><span class="strong">${a.action}</span> <span class="muted">${a.target}</span><div class="sub">${a.actor}</div></td></tr>`)}</tbody></table></div>`, { icon: 'list', flush: true })}

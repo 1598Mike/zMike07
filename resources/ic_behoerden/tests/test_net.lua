@@ -1,24 +1,9 @@
 local T, H = ...
 local S = IC.store
 
--- Attrappen für das, was FiveM bereitstellt ----------------------------------------
-json = json or dofile('tests/json.lua')
-local handlers, commands, sent, aces, timers = {}, {}, {}, {}, {}
-local resourceFiles = {}
-local gameTimer = 0
-
-RegisterNetEvent = function(name, fn) handlers[name] = fn end
-AddEventHandler = function(name, fn) handlers[name] = fn end
-RegisterCommand = function(name, fn) commands[name] = fn end
-TriggerClientEvent = function(name, target, ...) sent[#sent + 1] = { name = name, target = target, args = { ... } } end
-GetGameTimer = function() return gameTimer end
-IsPlayerAceAllowed = function(src, ace) return aces[src] == true and ace == Config.Staff.ace end
-GetPlayerName = function(src) local p = H.bridge.players[src]; return p and p.name or nil end
-GetCurrentResourceName = function() return 'ic_behoerden' end
-LoadResourceFile = function(_, path) return resourceFiles[path] end
-SetTimeout = function(ms, fn) timers[#timers + 1] = { ms = ms, fn = fn } end
-CreateThread = function() end
-Wait = function() end
+-- Attrappen für das, was FiveM bereitstellt (Ereignisse, Befehle, Spieler, Zeit)
+local F = dofile('tests/fivem.lua')(H)
+local handlers, commands, sent, aces, timers = F.handlers, F.commands, F.sent, F.aces, F.timers
 
 dofile('server/net.lua')
 local N = IC.net
@@ -32,7 +17,8 @@ local LENA, KELLER, ADMIN = 1, 10, 99
 
 local function cast()
     H.reset()
-    handlers, sent, timers, aces, gameTimer = handlers, {}, {}, {}, 0
+    F.reset()
+    sent, timers, aces = F.sent, F.timers, F.aces
     N.sessions, N.calls, N.seen = {}, {}, {}
     IC.started = true
     H.player(LENA, { charId = 'c-lena', name = 'Lena Brandt', coords = at(LOC) })
@@ -40,18 +26,7 @@ local function cast()
     H.player(ADMIN, { charId = 'c-admin', name = 'Admin Alex', coords = at(LOC, 40) })
 end
 
--- Löst ein Netzwerkereignis aus, wie FiveM es tut (source ist während des Aufrufs gesetzt)
-local function fire(src, name, ...)
-    source = src
-    handlers[name](...)
-    source = nil
-end
-
-local function lastSent(name, target)
-    for i = #sent, 1, -1 do
-        if sent[i].name == name and (target == nil or sent[i].target == target) then return sent[i] end
-    end
-end
+local fire, lastSent = F.fire, F.lastSent
 
 local function call(src, reqId, name, data)
     fire(src, 'ic_behoerden:server:call', reqId, name, data)
@@ -144,10 +119,10 @@ T.test('Netz: Begrenzung der Aufrufe und der Datenmenge', function()
     end
     T.ok(passed <= 40 and passed >= 38, 'höchstens 40 Aufrufe je Fenster (erhalten: ' .. passed .. ')')
     T.fails(N.handle(LENA, 'nameCheck', {}), 'Zu viele')
-    gameTimer = gameTimer + 11000
+    F.gameTimer = F.gameTimer + 11000
     T.notok(limited(N.handle(LENA, 'nameCheck', { name = 'Lenas Kiosk', legalForm = 'einzel' })), 'nach dem Fenster geht es wieder')
 
-    gameTimer = gameTimer + 11000
+    F.gameTimer = F.gameTimer + 11000
     T.fails(N.handle(LENA, 'nameCheck', { name = string.rep('x', 50000), legalForm = 'einzel' }), 'zu groß')
 end)
 
@@ -232,7 +207,7 @@ T.test('Netz: Bestandsimport per Befehl, nur mit Recht, wiederholbar', function(
     local missing = T.capture(commands[Config.Staff.importCommand], 0) -- Konsole: Datei fehlt
     T.eq(S.count('entities'), 0)
     T.ok(missing[1]:find('fehlt', 1, true), 'Hinweis auf die fehlende Datei')
-    resourceFiles['import/legacy.json'] = file
+    F.files['import/legacy.json'] = file
     local printed = T.capture(commands[Config.Staff.importCommand], 0)
     T.ok(table.concat(printed, '\n'):find('gibtsnicht', 1, true), 'Fehler der zweiten Zeile steht in der Konsole')
     T.eq(S.count('entities'), 1)
@@ -241,7 +216,7 @@ T.test('Netz: Bestandsimport per Befehl, nur mit Recht, wiederholbar', function(
     T.ok(H.lastNotice(LENA, 'übernommen'), 'Inhaberin wird benachrichtigt')
     T.capture(commands[Config.Staff.importCommand], 0)
     T.eq(S.count('entities'), 1, 'zweiter Lauf legt nichts doppelt an')
-    resourceFiles['import/legacy.json'] = nil
+    F.files['import/legacy.json'] = nil
 end)
 
 T.test('Netz: solange der Dienst startet, nimmt der Server keine Aufrufe an', function()
