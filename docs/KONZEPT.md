@@ -5,7 +5,8 @@
 > Dieses Dokument beschreibt *was* das System tut und *warum*. Die technische Umsetzung steht in
 > [`TECHNIK.md`](TECHNIK.md), der Fahrplan in [`UMSETZUNG.md`](UMSETZUNG.md). Die Bedienung im Spiel
 > erklären das [`BEAMTEN-HANDBUCH.md`](BEAMTEN-HANDBUCH.md) und der [`GRUENDER-LEITFADEN.md`](GRUENDER-LEITFADEN.md).
-> Die klickbare UI-Vorschau liegt in [`../resources/ic_behoerden/web/`](../resources/ic_behoerden/web/).
+> Die klickbare UI-Vorschau öffnet sich per Doppelklick: [`../vorschau/ic-behoerden-vorschau.html`](../vorschau/ic-behoerden-vorschau.html).
+> Die fertige Server-Ressource liegt in [`../resources/ic_behoerden/`](../resources/ic_behoerden/).
 
 ---
 
@@ -94,13 +95,13 @@ Terminverwaltung, damit sie sich aufs Rollenspiel konzentrieren können.
 | **Gründer / Bürger** | Jeder Charakter | Anträge stellen, Termine buchen, eigene Unternehmen verwalten, das Register durchsuchen |
 | **Anwärter** | Beamte in Ausbildung | Beratungstermine führen, bei Terminen zuschauen. Keine Entscheidungen. |
 | **Sachbearbeiter** | Beamte | Vorprüfung, Vorstellungstermine, Entscheidungen für Unternehmen und Organisationen, Sprechzeiten veröffentlichen |
-| **Amtsleiter** | Leitende Beamte | Zusätzlich: Einsprüche, Sanktionen, Entscheidung nach Aktenlage, Gebührenbefreiung, Sprechzeiten anderer Beamter verwalten |
-| **Behördenleitung** | Spitze der Verwaltung | Zusätzlich: Verordnungen (Gebühren und Limits im Spiel ändern, falls aktiviert), Notfall-Vertretung |
-| **Staff (OOC)** | Admins und Mods | Schlussprüfung (Staff-Gate), Kapazitäten, Namenssperrliste, Eskalationen, Audit-Log, Eingriff bei Verstößen |
+| **Amtsleiter** | Leitende Beamte | Zusätzlich: Einspruchsverhandlungen führen, Sanktionen verhängen, Sprechzeiten anderer Beamter verwalten |
+| **Behördenleitung** | Spitze der Verwaltung | Dieselben Rechte wie der Amtsleiter. Eigene Befugnisse (Verordnungen: Gebühren und Limits im Spiel ändern) sind für Phase 2 vorgesehen. |
+| **Staff (OOC)** | Admins und Mods | Schlussprüfung (Staff-Gate), Entscheidung nach Aktenlage (Notfallregel), Kapazitäten, Namenssperrliste, Eingriff ins Register, Audit-Log, Einstellungen |
 | **Fachbehörden** | Polizei, Rettungsdienst, Justiz | Stellen Zulassungen aus (zum Beispiel für Sicherheitsdienst, Praxis, Kanzlei). Sehen das Register. |
 
 Die Zuordnung Beamte ↔ Job und Rang steht in der Config (`Config.Officials`). Der Staff-Zugriff läuft über
-ACE-Rechte (`ic_behoerden.staff`).
+ACE-Rechte (`ic_behoerden.staff`). Der Server prüft Job, Rang und Recht **bei jedem Aufruf** neu: Wer den Job verliert, kann sofort nichts mehr entscheiden.
 
 ---
 
@@ -113,11 +114,15 @@ zwei Standorten pendeln muss.
 |-----|----------|
 | **Gewerbeamt-Terminal** | Anträge stellen, Status ansehen, Unternehmen verwalten, Register durchsuchen |
 | **Bürgeramt-Empfang** | Termine buchen, einchecken, Wartenummer ziehen. Anzeigetafel mit Aufruf. |
-| **Wartebereich** | Zone für den Check-in. Beamte sehen, wer wartet. |
-| **Beamten-Schreibtische (Schalter)** | Hier öffnen Beamte das Tablet und führen Termine durch |
+| **Beamten-Schalter** | Hier öffnen Beamte das Tablet und führen Termine durch |
 
-Beamte können das Tablet nur **im Amtsgebäude** nutzen (Zone in der Config). Das erhält die Immersion und verhindert,
-dass Entscheidungen „nebenbei“ vom Auto aus fallen.
+Gewerbeamt und Bürgeramt sind **ein Fenster mit zwei Startseiten**: Wer an einem der beiden Terminals sitzt, kann in der
+Oberfläche zum anderen Bereich wechseln. Der Unterschied ist, wo man ins Spiel hineinläuft. Das Warten auf den Aufruf spielt
+sich im Gebäude ab, dafür braucht es keine eigene Zone.
+
+Beamte können das Tablet nur **an den Schaltern** nutzen (`Config.Locations.beamte`). Das erhält die Immersion und verhindert,
+dass Entscheidungen „nebenbei“ vom Auto aus fallen. Wer das nicht will, schaltet `Config.Officials.mustBeInOffice` ab
+und vergibt einen Befehl. Der Server prüft den Ort bei **jedem** Aufruf: Wer sich vom Terminal entfernt, verliert die Sitzung.
 
 ---
 
@@ -147,26 +152,29 @@ flowchart TD
 
 ### Schritt 1: Antrag ausfüllen (Gewerbeamt-Terminal)
 
-Der Wizard führt durch sechs Schritte. Bei jedem Schritt prüft das System sofort und zeigt Hinweise an.
+Der Wizard führt durch sechs Schritte. Bei jedem Schritt prüft der Server sofort und zeigt Hinweise an.
 
-| Schritt | Inhalt | Live-Prüfung |
-|---------|--------|--------------|
-| 1 Art und Branche | Unternehmen oder Fraktion, dazu Branche beziehungsweise Organisationsart | Freie Plätze je Branche (Kapazität) |
-| 2 Rechtsform und Name | Rechtsform wählen, Namen eingeben | Name frei? Zu ähnlich? Gesperrt? Rechtsformzusatz wird ergänzt |
-| 3 Gründer und Anteile | Mitgründer hinzufügen, Rollen und Anteile festlegen | Mindestanzahl Gründer, Anteile ergeben 100 %, Zustimmung der Mitgründer |
-| 4 Standort | Gewerbeimmobilie wählen oder „mobil / ohne festen Standort“ | Standort Pflicht für manche Branchen |
-| 5 Konzept | Geschäftsidee, Zielgruppe, Angebot, Personalplanung. Bei Organisationen: Zweck und Satzung | Mindestlänge, Pflichtfelder |
-| 6 Prüfen und bezahlen | Zusammenfassung, Gebührenübersicht, Erklärung der Richtigkeit | Kontostand, Voraussetzungen der Gründer |
+| Schritt | Unternehmen | Organisation | Live-Prüfung |
+|---------|-------------|--------------|--------------|
+| 1 | Art und Branche | Art der Organisation | Freie Plätze je Branche (Kapazität) |
+| 2 | Rechtsform und Name | Name | Name frei? Zu ähnlich? Gesperrt? Rechtsformzusatz wird ergänzt |
+| 3 | Gründer und Anteile | Gründungsmitglieder | Mindestanzahl Gründer, Anteile ergeben 100 %, Zustimmung der Mitgründer |
+| 4 | Standort (Gewerbeimmobilie oder „mobil“) | Sitz | Standort Pflicht für manche Branchen, Immobilie noch frei? |
+| 5 | Konzept: Geschäftsidee, Zielgruppe, Angebot, Personal | Zweck und Satzung, OOC-Angaben | Mindestlänge, Pflichtfelder |
+| 6 | Prüfen und bezahlen | Prüfen und bezahlen | Kontostand, Voraussetzungen der Gründer, Gebührenübersicht |
 
-**Zustimmung der Mitgründer:** Jeder Mitgründer erhält eine Einladung (Benachrichtigung) und muss am
-eigenen Terminal oder per Handy zustimmen. Erst wenn alle zugestimmt haben, lässt sich der Antrag
-einreichen. So kann niemand ungefragt als Gesellschafter eingetragen werden.
+**Zustimmung der Mitgründer:** Wer Mitgründer werden soll, muss **in der Nähe stehen** (15 Meter) und bekommt eine
+Einladung eingeblendet. Mit **Y** nimmt er an, mit **N** lehnt er ab. Die Antwort geht direkt an den Server, der Browser des
+Antragstellers kann sie nicht fälschen. Erst wenn alle zugestimmt haben, lässt sich der Antrag einreichen. So kann niemand
+ungefragt als Gesellschafter eingetragen werden. Eine Einladung verfällt nach 5 Minuten, Entwürfe bleiben gespeichert.
 
 ### Schritt 2: Einreichen
 
-- Die **Antragsgebühr** wird sofort abgebucht. Sie wird bei Ablehnung oder Rückzug **nicht** erstattet. Das
-  verhindert Spam-Anträge.
-- Der Name ist **7 Tage reserviert** (verlängert sich automatisch, solange der Antrag aktiv ist).
+- Beim Einreichen zahlt der Antragsteller **alles im Voraus**: die **Antragsgebühr** (geht sofort an die Stadtkasse und wird bei
+  Ablehnung oder Rückzug **nicht** erstattet, das verhindert Spam-Anträge), die **Eintragungsgebühr** und bei GmbH und Stiftung
+  das **Kapital**. Die beiden letzten bleiben **in Verwahrung** und gehen bei Ablehnung, Rückzug oder Ablauf der Frist
+  **vollständig zurück**.
+- Der Name ist **7 Tage reserviert** (die Frist beginnt mit jedem neuen offenen Status von vorn, solange der Antrag lebt).
 - Der Antrag bekommt ein **Aktenzeichen** im Format `GA-2026-0142`.
 - Ein Gründer darf höchstens **2 offene Anträge** gleichzeitig haben.
 
@@ -180,7 +188,7 @@ Ein Sachbearbeiter sieht den Antrag in der Warteschlange „Vorprüfung“ und e
 | **Nachbesserung erforderlich** | Der Beamte schreibt, was fehlt. Der Gründer hat **7 Tage**, um den Antrag zu bearbeiten und erneut einzureichen. |
 | **Abgelehnt** | Nur bei offensichtlicher Unzulässigkeit (Name, Zweck). Begründung ist Pflicht. |
 
-Ziel-Durchlaufzeit der Vorprüfung: **48 Stunden**. Danach erscheint der Antrag im Staff-Dashboard als
+Ziel-Durchlaufzeit der Vorprüfung: **48 Stunden**. Danach erscheint der Antrag im Tablet der Beamten als
 „überfällig“.
 
 ### Schritt 4: Termin buchen (Bürgeramt)
@@ -194,7 +202,7 @@ Siehe Abschnitt 7. Die Entscheidung lautet:
 
 | Entscheidung | Folge |
 |--------------|-------|
-| **Genehmigt** | Eintragung wird vollzogen (gegebenenfalls nach Staff-Freigabe). Eintragungsgebühr wird fällig. |
+| **Genehmigt** | Eintragung wird vollzogen (gegebenenfalls nach Staff-Freigabe). Die verwahrte Eintragungsgebühr geht an die Stadtkasse. |
 | **Genehmigt mit Auflagen** | Wie genehmigt, aber mit **Auflagen** und Fristen (zum Beispiel „Mietvertrag innerhalb von 14 Tagen nachweisen“). Eine Nachkontrolle wird terminiert. |
 | **Vertagt (Nachbesserung)** | Der Gründer erhält eine To-do-Liste und einen **priorisierten Folgetermin** (Fast-Lane). |
 | **Abgelehnt** | Mit Begründung. Sperrfrist 24 Stunden für denselben Namen. **Einspruch innerhalb von 48 Stunden** möglich. |
@@ -203,10 +211,12 @@ Siehe Abschnitt 7. Die Entscheidung lautet:
 
 Bei Genehmigung passiert automatisch:
 
-1. **Registernummer** wird vergeben (`HRA 1042`, `HRB 0317`, `VR 0208`).
-2. **Eintragungsgebühr** wird abgebucht und an die Stadtkasse überwiesen. Das Stammkapital (GmbH) geht vom
-   Treuhandkonto auf das Firmenkonto.
-3. **Gewerbeschein** (Item) wird dem Geschäftsführer ausgestellt.
+1. **Registernummer** wird vergeben (`HRA 1042`, `HRB 0317`, `VR 0208`, `IG 0012`).
+2. Die verwahrte **Eintragungsgebühr** geht an die Stadtkasse. Das **Stammkapital** (GmbH, Stiftung) gehört jetzt dem
+   Unternehmen: Euer Hook `onApproved` bucht es auf das Firmenkonto und meldet das mit `true`. Ohne Hook geht das Kapital an
+   den Antragsteller zurück. Es verschwindet nie.
+3. **Gewerbeschein** (Item) wird jedem Inhaber, Geschäftsführer oder Vorsitzenden ausgehändigt. Ist er gerade offline oder das
+   Inventar voll, bekommt er ihn beim nächsten Login.
 4. **Aktivierung:** Das System ruft die Provisioning-Hooks auf. Dort hängt ihr eure bestehende Job-, Gang-, Konto-
    und Lagerlogik an (siehe [`TECHNIK.md`](TECHNIK.md)).
 5. **Probezeit** von 14 Tagen beginnt, falls Auflagen vergeben wurden.
@@ -251,8 +261,8 @@ flowchart TD
 
 | Schlüssel | Bezeichnung | Dauer | Pflichtteilnehmer | Mindestrang des Beamten |
 |-----------|-------------|-------|-------------------|--------------------------|
-| `vorstellung_unternehmen` | Vorstellungstermin Unternehmen | 30 Min | Geschäftsführer und alle Gesellschafter ab 25 % | Sachbearbeiter |
-| `vorstellung_fraktion` | Vorstellungstermin Organisation | 45 Min | Vorstand und mindestens die Mindestzahl an Gründungsmitgliedern | Sachbearbeiter |
+| `vorstellung_unternehmen` | Vorstellungstermin Unternehmen | 30 Min | Inhaber, Geschäftsführer und alle Gesellschafter ab 25 % | Sachbearbeiter |
+| `vorstellung_fraktion` | Vorstellungstermin Organisation | 45 Min | Alle Gründungsmitglieder | Sachbearbeiter |
 | `aenderung` | Änderung (Name, Sitz, Gesellschafter) | 15 Min | Geschäftsführer | Sachbearbeiter |
 | `nachkontrolle` | Nachkontrolle der Auflagen | 20 Min | Geschäftsführer | Sachbearbeiter |
 | `einspruch` | Einspruchsverhandlung | 30 Min | Geschäftsführer oder Vorstand | Amtsleiter |
@@ -276,8 +286,9 @@ flowchart TD
 ### 6.5 Spontan-Besuch (Wartenummer)
 
 Wer ohne Termin kommt, kann am Empfang eine **Wartenummer** ziehen, solange mindestens ein Beamter im Dienst
-ist. Die Warteschlange wird der Reihe nach abgearbeitet. Spontan-Termine sind für Beratung und, bei bestandener
-Vorprüfung, auch für die Vorstellung möglich.
+ist. Die Warteschlange wird der Reihe nach abgearbeitet. Eine Wartenummer gibt es **nur für die Beratung**. Für die
+Vorstellung, die Änderung und alle anderen Termine bucht man einen Termin, denn dafür müssen Pflichtteilnehmer und Beamter
+mit dem passenden Rang feststehen. Wer das Spiel verlässt, verliert seine Nummer.
 
 ### 6.6 Wenn niemand da ist: Notfallregel
 
@@ -285,8 +296,8 @@ Damit das System nicht stillsteht:
 
 | Zeit ohne buchbaren Termin | Folge |
 |----------------------------|-------|
-| ab **72 Stunden** nach bestandener Vorprüfung | Der Antrag erscheint im Staff-Dashboard als **„Eskalation“** |
-| danach | Ein Amtsleiter oder (falls kein Amtsleiter aktiv ist) der Staff kann **nach Aktenlage entscheiden** (schriftliches Verfahren). IC ist das ein Bescheid der Behörde ohne Termin. Eine Begründung ist Pflicht. |
+| ab **72 Stunden** nach bestandener Vorprüfung | Der Antrag erscheint im Staff-Panel als **„Eskalation“** |
+| danach | Der Staff kann **nach Aktenlage entscheiden** (schriftliches Verfahren). IC ist das ein Bescheid der Behörde ohne Termin. Eine Begründung ist Pflicht. Auch Sicherheits- und Finanzbranche sowie Untergrund-Fraktionen laufen danach noch durch die Schlussprüfung. |
 
 Das schriftliche Verfahren ist **abschaltbar** (`Config.Appointments.writtenProcedure`).
 
@@ -359,10 +370,11 @@ die Gründer erklären ihr Konzept.
 **Nie** ablehnen, weil das Konzept „nicht gefällt“, wegen Konkurrenz zum eigenen Unternehmen oder aus OOC-Gründen.
 Das **Neutralitätsgebot** und die **Befangenheitsregel** stehen im Beamten-Handbuch.
 
-### 7.5 Vier-Augen-Prinzip (optional)
+### 7.5 Vier-Augen-Prinzip (Phase 2)
 
-Mit `Config.Decisions.fourEyes` verlangt das System für bestimmte Anträge (empfohlen: Fraktionen) die
-Gegenzeichnung eines zweiten Beamten mit Rang Amtsleiter oder höher. Sinnvoll ab etwa fünf aktiven Beamten.
+Für spätere Versionen ist vorgesehen, dass bestimmte Anträge (empfohlen: Fraktionen) die Gegenzeichnung eines zweiten
+Beamten mit Rang Amtsleiter oder höher brauchen. Sinnvoll ab etwa fünf aktiven Beamten. Die Einstellung
+`Config.Decisions.fourEyes` ist schon da, **hat in Version 1.0 aber keine Wirkung** und lässt sich im Staff-Panel nicht einschalten.
 
 ---
 
@@ -393,11 +405,11 @@ Damit die Spielmechaniken kontrolliert bleiben, gibt es zusätzlich eine **OOC-K
 
 | Aspekt | Regelung |
 |--------|----------|
-| Eingabe | Im letzten Wizard-Schritt gibt es einen deutlich markierten Bereich **„OOC-Angaben (nur für den Staff sichtbar)“**: Fraktionsart (legal oder Untergrund), Konzept, Mitgliederzahl, Revierwunsch. |
+| Eingabe | Im letzten Wizard-Schritt gibt es einen deutlich markierten Bereich **„OOC-Angaben (nur für den Staff sichtbar)“**: Fraktionsart (legal oder Untergrund), Konzept als Freitext, geplante Mitgliederzahl. |
 | Sichtbarkeit | Beamte **sehen diese Angaben nie.** Das Register zeigt nur die legale Hülle. |
 | Staff-Gate | Untergrund-Fraktionen brauchen nach der IC-Genehmigung eine **Schlussprüfung durch den Staff** („Registerführung“). |
 | Kapazität | Untergrund-Fraktionen verbrauchen einen **Slot** der Kategorie. Sind alle Slots belegt, ist die Gründung gesperrt (Warteliste). |
-| Freischaltung | Erst die Staff-Freigabe schaltet die Fraktionsmechaniken frei (Provisioning-Hook `onActivated` mit `ooc.category = "untergrund"`). |
+| Freischaltung | Erst die Staff-Freigabe schaltet die Fraktionsmechaniken frei: Der Hook `onApproved` läuft erst nach der Schlussprüfung und bekommt `entity.ooc.category = "untergrund"`. |
 
 **Wichtig:** Die IC-Genehmigung der Hülle bedeutet **nicht** automatisch die Freischaltung der Mechaniken. Das
 ist der Hebel, mit dem ihr Gründungswellen kontrolliert.
@@ -410,7 +422,7 @@ ist der Hebel, mit dem ihr Gründungswellen kontrolliert.
 
 ## 9. Rechtsformen, Branchen, Gebühren
 
-Alle Werte sind **Standardwerte** und in `config.lua` anpassbar. Bitte an die Serverwirtschaft anpassen.
+Alle Werte sind **Standardwerte** und in `config_server.lua` anpassbar. Bitte an die Serverwirtschaft anpassen.
 
 ### 9.1 Rechtsformen
 
@@ -420,7 +432,7 @@ Alle Werte sind **Standardwerte** und in `config.lua` anpassbar. Bitte an die Se
 | `gbr` | GbR | Unternehmen | 2 | $400 | $1.100 | – | HRA |
 | `gmbh` | GmbH | Unternehmen | 1 | $800 | $2.700 | $25.000 | HRB |
 | `ev` | Eingetragener Verein | Organisation | 3 | $300 | $900 | – | VR |
-| `ig` | Interessengemeinschaft | Organisation | 3 | $200 | $600 | – | VR |
+| `ig` | Interessengemeinschaft | Organisation | 3 | $200 | $600 | – | IG |
 | `partei` | Partei / Wählergemeinschaft | Organisation | 5 | $500 | $1.500 | – | VR |
 | `verband` | Verband / Gewerkschaft | Organisation | 5 | $500 | $1.500 | – | VR |
 | `stiftung` | Stiftung | Organisation | 1 | $800 | $2.200 | $50.000 | VR |
@@ -457,7 +469,17 @@ IC darum kümmern.
 
 Alle Gebühren gehen an die **Stadtkasse** (`Config.Treasury`). Aus ihr zahlt die Verwaltung eine
 **Terminpauschale** von **$150** je durchgeführtem Termin an den Beamten, **unabhängig vom Ergebnis**.
-So lohnt sich das Erscheinen im Dienst, ohne dass es einen Anreiz zum Genehmigen gibt.
+So lohnt sich das Erscheinen im Dienst, ohne dass es einen Anreiz zum Genehmigen gibt. Ist die Kasse einmal leer, wird die
+Pauschale trotzdem gezahlt und im Protokoll vermerkt.
+
+| Betrag | Beim Einreichen | Bei Genehmigung | Bei Ablehnung, Rückzug, Ablauf |
+|--------|-----------------|-----------------|--------------------------------|
+| Antragsgebühr | wird gezahlt, geht an die Stadtkasse | bleibt dort | bleibt dort |
+| Eintragungsgebühr | wird gezahlt, liegt in Verwahrung | geht an die Stadtkasse | wird erstattet |
+| Kapital (GmbH, Stiftung) | wird gezahlt, liegt in Verwahrung | geht aufs Firmenkonto (Hook) oder zurück an den Antragsteller | wird erstattet |
+| Terminpauschale | | $150 an den Beamten, aus der Stadtkasse | $150 an den Beamten, aus der Stadtkasse |
+
+Ist der Antragsteller bei einer Erstattung offline, wird sie gemerkt und beim nächsten Login ausgezahlt.
 
 ---
 
@@ -545,9 +567,9 @@ Jede Stufe braucht eine Begründung und lässt sich per Einspruch anfechten.
 
 | Vorgang | Weg | Gebühr |
 |---------|-----|--------|
-| Namensänderung, Sitzverlegung, Gesellschafterwechsel | Änderungsantrag am Terminal, Termin `aenderung` | $200 |
+| Namensänderung, Sitzverlegung | Änderungsantrag am Terminal, die Beamten vollziehen ihn im Termin `aenderung` | $200 |
 | Duplikat Gewerbeschein | Terminal | $100 |
-| Auflösung | Antrag am Terminal, Termin `aufloesung` oder Auflösung durch den Gründer am Terminal | – |
+| Auflösung | Der Inhaber löst am Terminal selbst auf (sofort, ohne Termin) | – |
 
 ### 11.5 Gewerbeschein und Verlängerung
 
@@ -561,10 +583,10 @@ wird `ruhend`.
 
 | Fall | Behandlung |
 |------|------------|
-| **Mitgründer stimmt nicht zu** | Der Antrag bleibt im Entwurf. Nach 7 Tagen ohne Zustimmung wird der Entwurf gelöscht. |
+| **Mitgründer stimmt nicht zu** | Er verschwindet aus der Liste, der Antragsteller kann ihn erneut einladen oder jemand anderen wählen. Die Einladung verfällt nach 5 Minuten. Der Entwurf bleibt gespeichert. |
 | **Name wird während des Antrags anderweitig beantragt** | Nicht möglich, die Reservierung schützt den Namen. |
 | **Gründer wechselt Charakter oder Server startet neu** | Anträge, Termine und Reservierungen sind in der Datenbank. Nichts geht verloren. |
-| **Zwei Beamte wollen denselben Termin** | Der Termin wird atomar übernommen. Wer zuerst „Übernehmen“ klickt, hat ihn. |
+| **Zwei Beamte wollen denselben Termin** | Wer den Termin zuerst startet, führt ihn. Der andere kann nicht eingreifen. |
 | **Beamter ist selbst Gründer** | Befangen. Das System zeigt ihm den Antrag nicht zur Bearbeitung. |
 | **Gründer verliert Ausweis** | Voraussetzungsprüfung scheitert. Hinweis im Terminal. |
 | **Alle Beamten sind lange offline** | Notfallregel (Abschnitt 6.6). |
@@ -582,10 +604,10 @@ möglich. Bestehende bleiben bestehen.
 | Phase | Was passiert |
 |-------|--------------|
 | **Stichtag** | Neugründungen laufen nur noch IC. Das alte Bewerbungsformular beziehungsweise Ticketsystem wird geschlossen. |
-| **Übernahme** | Der Staff trägt alle bestehenden Fraktionen und Unternehmen mit dem Kennzeichen `bestandsschutz = true` ins Register ein (Import-Befehl, siehe [`TECHNIK.md`](TECHNIK.md)). Registernummer und Gewerbeschein werden vergeben. Status `aktiv`. |
-| **Bestätigung** | Inhaber bestätigen ihre Daten kostenlos am Terminal („Bestandsbestätigung“) innerhalb von **28 Tagen**. |
-| **Erinnerung** | Nach 14 Tagen weist das Terminal und eine Nachricht auf offene Bestätigungen hin. |
-| **Nach Fristablauf** | Standard: Hinweis an Inhaber und Staff, **keine Sanktion**. Optional: Status `ruhend` nach 56 Tagen. Diese Härte ist eine Entscheidung (Abschnitt 18). |
+| **Übernahme** | Der Staff trägt alle bestehenden Fraktionen und Unternehmen mit dem Konsolenbefehl `icimport` ins Register ein (Datei `import/legacy.json`, siehe [`TECHNIK.md`](TECHNIK.md)). Registernummer und Gewerbeschein werden vergeben, Status `aktiv`. Der Befehl lässt sich gefahrlos wiederholen. |
+| **Bestätigung** | Inhaber bestätigen ihre Daten kostenlos am Terminal („Bestandsbestätigung“) innerhalb von **28 Tagen**. Das Terminal weist dauerhaft darauf hin. |
+| **Erinnerung** | Nach 14 Tagen bekommen die Inhaber **eine** Nachricht. |
+| **Nach Fristablauf** | Standard: Hinweis, **keine Sanktion**. Optional: Status `ruhend` nach 56 Tagen (`Config.Legacy.restAfterDays`). Wer danach noch bestätigt, ist sofort wieder aktiv. Diese Härte ist eine Entscheidung (Abschnitt 18). |
 
 Bestandsschutz-Einträge müssen **keinen** Vorstellungstermin durchlaufen und zahlen keine Gründungsgebühren.
 
@@ -602,7 +624,7 @@ Der Staff tritt im Prozess nicht als Spielfigur auf. Er arbeitet im **Staff-Pane
 | **Namenssperrliste** | Begriffe sperren oder freigeben |
 | **Eskalationen** | Überfällige Anträge, Notfallregel (nach Aktenlage entscheiden) |
 | **Audit-Log** | Alle Statusänderungen einsehen und filtern |
-| **Eingriff** | Entscheidungen aufheben, Eintragungen sperren oder löschen. Immer mit Begründung, immer protokolliert. |
+| **Register-Eingriff** | Eintragungen auf `aktiv`, `ruhend`, `gesperrt` oder `aufgeloest` setzen. Immer mit Begründung und im Audit-Log. Die Inhaber erfahren IC nur, dass „die Registerführung“ gehandelt hat. |
 | **Einstellungen** | Funktionen ein- und ausschalten (Notfallregel, Beamtenpflicht, Untergrund-Weg) |
 
 **Grundsatz:** Der Staff greift ein, wenn Regeln verletzt werden oder Kapazitäten ausgeschöpft sind, nicht weil
@@ -630,23 +652,24 @@ Alle Oberflächen sind in der [klickbaren Vorschau](../resources/ic_behoerden/we
 | **Beamten-Tablet: Anträge** | Beamte | Vorprüfung |
 | **Beamten-Tablet: Sprechzeiten** | Beamte | Zeitfenster veröffentlichen |
 | **Beamten-Tablet: Register** | Beamte | Auflagen und Sanktionen |
-| **Staff-Panel** | Staff | Übersicht, Freigaben, Kapazitäten, Sperrliste, Audit, Einstellungen |
+| **Staff-Panel** | Staff | Übersicht, Freigaben, Eskalationen, Register, Kapazitäten, Sperrliste, Audit, Einstellungen |
 
 ---
 
 ## 16. Kennzahlen
 
-Das Staff-Panel zeigt Kennzahlen, mit denen ihr den Erfolg messt:
+Das Staff-Panel zeigt Kennzahlen, mit denen ihr den Erfolg messt. Mit wenigen Vorgängen schwanken die Quoten stark, die
+Werte werden nach den ersten Wochen aussagekräftig.
 
-| Kennzahl | Zielwert (Vorschlag) |
-|----------|----------------------|
-| Beamten-Verfügbarkeit (Stunden pro Tag mit mindestens einem Beamten im Dienst) | ≥ 4 |
-| Durchlaufzeit Einreichung → Eintragung | ≤ 7 Tage |
-| Durchlaufzeit Vorprüfung | ≤ 48 Stunden |
-| Ablehnungsquote | 10 bis 25 % |
-| No-Show-Quote bei Terminen | ≤ 10 % |
-| Beamten-Ausfälle (Termine, die wegen fehlender Beamter platzen) | ≤ 5 % |
-| Eskalationen in die Notfallregel | ≤ 5 % der Anträge |
+| Kennzahl | Zielwert (Vorschlag) | Im Panel |
+|----------|----------------------|:--------:|
+| Beamten-Verfügbarkeit (Stunden pro Tag mit mindestens einem Beamten im Dienst) | ≥ 4 | ja |
+| Durchlaufzeit Einreichung → Eintragung | ≤ 7 Tage | ja |
+| Ablehnungsquote | 10 bis 25 % | ja |
+| No-Show-Quote bei Terminen | ≤ 10 % | ja |
+| Beamten-Ausfälle (Termine, die wegen fehlender Beamter platzen) | ≤ 5 % | ja |
+| Eskalationen in die Notfallregel | ≤ 5 % der Anträge | als Zahl der offenen Eskalationen |
+| Durchlaufzeit Vorprüfung | ≤ 48 Stunden | nein, sichtbar als „überfällig“ im Tablet |
 
 ---
 
@@ -661,7 +684,7 @@ Das Staff-Panel zeigt Kennzahlen, mit denen ihr den Erfolg messt:
 | **Bürokratie schreckt Gründer ab** | Beratungstermin, klare Leitfäden, Live-Hinweise im Wizard, Ziel-Durchlaufzeiten, Benachrichtigungen |
 | **Beamte sehen OOC-Informationen (Metagaming)** | Strikte Trennung im Datenmodell, OOC-Felder werden nie an Beamten-Oberflächen geschickt |
 | **Wirtschaft kippt durch Gebühren** | Alle Werte per Config. Erst klein starten und nachjustieren. |
-| **Technische Fehler (Doppelbuchungen, Inkonsistenzen)** | Server-seitige Transaktionen und Sperren bei Slots, Unit-Tests der Kernlogik, Audit-Log |
+| **Technische Fehler (Doppelbuchungen, Inkonsistenzen)** | Der Server prüft und bucht in einem Schritt ohne parallelen Zugriff, getestete Kernlogik (siehe [`TECHNIK.md`](TECHNIK.md)), Audit-Log |
 | **Übergang chaotisch** | Bestandsschutz (Abschnitt 13), Pilotphase mit wenigen Beamten, klare Kommunikation |
 
 ---
@@ -675,13 +698,15 @@ Für jede Frage steht eine Empfehlung. Bis zu eurer Entscheidung gelten die Stan
 | 1 | **Wie werden Untergrund-Fraktionen gegründet?** | Über die legale Hülle (IG oder Verein) plus OOC-Angaben und Staff-Gate | `Config.Organizations.undergroundViaPortal` |
 | 2 | **Wer sind die Beamten?** (Job, Ränge) | Eigene Fraktion „Stadtverwaltung“ mit den vier Rängen aus Abschnitt 3. Mindestens 3 aktive Beamte vor dem Go-Live. | `Config.Officials` |
 | 3 | **Terminmodus** | `hybrid` (Live-Termine plus Sprechzeiten) | `Config.Appointments.mode` |
-| 4 | **Vier-Augen-Prinzip für Fraktionen** | Aus, bis es etwa fünf aktive Beamte gibt | `Config.Decisions.fourEyes` |
-| 5 | **Schriftliches Verfahren (Aktenlage)** | An, nur Amtsleiter und Staff, nach 72 Stunden | `Config.Appointments.writtenProcedure` |
+| 4 | **Vier-Augen-Prinzip für Fraktionen** | Aus. Vorgesehen für Phase 2, in Version 1.0 ohne Wirkung. | `Config.Decisions.fourEyes` |
+| 5 | **Schriftliches Verfahren (Aktenlage)** | An, entscheidet der Staff, nach 72 Stunden | `Config.Appointments.writtenProcedure` |
 | 6 | **Gebührenhöhe** | Mit den Standardwerten starten, nach zwei Wochen an der Kasse prüfen | `Config.LegalForms` |
-| 7 | **Strikes und Sperren** | 3 Strikes in 14 Tagen, 3 Tage Sperre | `Config.Appointments.strikes` |
+| 7 | **Strikes und Sperren** | 3 Strikes in 14 Tagen, 3 Tage Sperre | `Config.Rules.strikeLimit`, `strikeDays`, `banDays` |
 | 8 | **Bestandsschutz-Härte** | Nur Hinweis, keine Sanktion. Erst nach der ersten Welle über `ruhend` nachdenken. | `Config.Legacy` |
-| 9 | **Framework und Zusatzressourcen** (ESX, QBCore, Qbox, Inventar, Telefon) | Die Bridge erkennt ESX und QBCore automatisch. Telefon und Inventar sind Adapter. | `Config.Framework`, `bridge/` |
+| 9 | **Framework und Zusatzressourcen** (ESX, QBCore, Qbox, Inventar, Telefon) | Die Brücke erkennt Qbox, QBCore und ESX automatisch. Inventar: ox_inventory wird bevorzugt. Telefon über den Hook `phoneMessage`. | `Config.Framework`, `Config.Hooks` |
 | 10 | **Gewerbeschein-Verlängerung** | In Phase 2 nachziehen | `Config.Certificate` |
+| 11 | **Stammkapital und Firmenkonto** | Den Hook `onApproved` an eure Firmenkonten anbinden und `true` zurückgeben | `Config.Hooks.onApproved` |
+| 12 | **Alter, Spielzeit und Ausweis eurer Charaktere** | Das Alter kommt aus dem Geburtsdatum. Spielzeit und Ausweis nur mit eigener Quelle prüfen. | `Config.Characters` |
 
 ---
 

@@ -955,3 +955,27 @@ T.test('Staff: Eingriff in das Register mit Begründung, Hinweise zur Schlusspr�
     hints = IC.staff.gateHints(a)
     T.eq(hints[1].ok, true); T.eq(hints[2].ok, true); T.eq(hints[3].ok, true)
 end)
+
+T.test('Bestandsschutz: Erinnerung nach 14 Tagen, auf Wunsch "ruhend", Bestätigung macht wieder aktiv', function()
+    cast()
+    IC.register.importLegacy({ { ref = 'b1', name = 'Lenas Kiosk', legalForm = 'einzel', branch = 'handel', members = { { charId = 'c-lena', name = 'Lena Brandt', role = 'inhaber' } } } }, 'Test')
+    local e = S.list('entities')[1]
+    local function reminders() local n = 0; for _, x in ipairs(H.bridge.notices) do if x.text:find('bestätigen Sie die Daten', 1, true) then n = n + 1 end end return n end
+    IC.register.tickLegacy()
+    T.eq(reminders(), 0, 'nach dem Import noch keine Erinnerung')
+    H.advance(15 * DAY)
+    IC.register.tickLegacy(); IC.register.tickLegacy()
+    T.eq(reminders(), 1, 'genau eine Erinnerung nach 14 Tagen'); T.eq(e.status, 'aktiv', 'ohne restAfterDays bleibt der Eintrag aktiv')
+    H.advance(60 * DAY)
+    IC.register.tickLegacy()
+    T.eq(e.status, 'aktiv', 'Standard: nur Hinweis, keine Sanktion')
+
+    Config.Legacy.restAfterDays = 56
+    IC.register.tickLegacy()
+    T.eq(e.status, 'ruhend'); T.eq(e.legacyRested, true)
+    T.succeeds(H.call(LENA, 'gewerbeamt', 'legacyConfirm', { id = e.id }))
+    T.eq(e.status, 'aktiv', 'die Bestätigung hebt das Ruhen auf'); T.eq(e.legacyConfirmed, true); T.eq(e.legacyRested, nil)
+    IC.register.tickLegacy()
+    T.eq(e.status, 'aktiv')
+    Config.Legacy.restAfterDays = nil
+end)

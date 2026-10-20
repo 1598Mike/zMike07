@@ -429,6 +429,10 @@ function A.legacyConfirm(ctx, p)
     if not e or not e.legacy then return fail('Kein Bestandsschutz-Eintrag.') end
     e.legacyConfirmed = true
     S.put('entities', e)
+    if e.legacyRested then
+        e.legacyRested = nil
+        IC.register.setStatus(e, 'aktiv', ctx.char.name, 'Bestandsbestätigung nachgeholt')
+    end
     IC.audit(ctx.char.name, 'bürger', 'Bestandsbestätigung', e.regNo, e.name)
     return ok()
 end

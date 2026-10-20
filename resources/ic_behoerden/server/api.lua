@@ -170,4 +170,5 @@ end
 function IC.tick()
     A.tick()
     P.tick()
+    G.tickLegacy()
 end

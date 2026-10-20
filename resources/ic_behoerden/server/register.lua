@@ -246,6 +246,30 @@ function G.importOne(it, actor)
     return e
 end
 
+-- Bestandsschutz: einmalige Erinnerung an die Bestätigung und, wenn eingestellt (Config.Legacy.restAfterDays), der Status "ruhend".
+-- Wer danach noch bestätigt, ist sofort wieder aktiv (siehe A.legacyConfirm). Wird regelmäßig aufgerufen.
+function G.tickLegacy()
+    local cfg = Config.Legacy or {}
+    local now = IC.now()
+    local open = S.list('entities', function(x) return x.legacy and not x.legacyConfirmed and x.legacyDue and x.status ~= 'aufgeloest' end)
+    for _, e in ipairs(open) do
+        local since = e.legacyDue - (cfg.confirmDays or 28) * R.DAY
+        if cfg.remindAfterDays and not e.legacyReminded and now > since + cfg.remindAfterDays * R.DAY then
+            e.legacyReminded = true
+            S.put('entities', e)
+            for _, m in ipairs(e.members or {}) do
+                if LEADER[m.role] then
+                    IC.notify(m.charId, 'Bitte bestätigen Sie die Daten von „' .. e.name .. '“ im Gewerbeamt. Das ist kostenlos und geht bis ' .. os.date('%d.%m.%Y', e.legacyDue // 1000) .. '.', 'warn')
+                end
+            end
+        end
+        if cfg.restAfterDays and e.status == 'aktiv' and now > since + cfg.restAfterDays * R.DAY then
+            e.legacyRested = true
+            G.setStatus(e, 'ruhend', 'System', 'Bestandsbestätigung ist ausgeblieben')
+        end
+    end
+end
+
 -- Übernimmt eine Liste. Der Import lässt sich wiederholen: vorhandene Einträge werden übersprungen.
 function G.importLegacy(items, actor)
     local res = { created = 0, skipped = 0, errors = {} }

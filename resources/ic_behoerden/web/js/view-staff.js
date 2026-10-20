@@ -149,7 +149,7 @@
     return html`
       <div class="page-head"><div><div class="crumbs">Staff-Panel · Register</div><h1>Register</h1><p class="sub">Alle Eintragungen mit ihren OOC-Angaben. Hier greifen Sie bei Regelverstößen ein. Jeder Eingriff braucht eine Begründung und steht im Audit-Log. Die Inhaber erfahren IC nur, dass die Registerführung gehandelt hat.</p></div>${oocBadge}</div>
       ${c.sheet('Eintragungen', list.length ? html`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Nummer</th><th>Art</th><th>Status</th><th>OOC</th><th></th></tr></thead><tbody>${list.map((e) => html`<tr>
-        <td><div class="strong">${e.name}</div><div class="sub">${e.owner}${e.legacy ? ' · Bestand' : ''}</div></td>
+        <td><div class="strong">${e.name}</div><div class="sub">${e.owner}${e.legacy ? (e.legacyConfirmed ? ' · Bestand, bestätigt' : ' · Bestand, Bestätigung offen') : ''}</div></td>
         <td>${c.tag(e.regNo)}</td>
         <td>${formOf(e.legalForm).label}${e.branch ? html`<div class="sub">${branchOf(e.branch).label}</div>` : ''}</td>
         <td>${c.orgChip(e.status)}</td>

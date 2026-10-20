@@ -56,12 +56,13 @@
     ['Untergrund-Fraktionen: wie gründen?', 'Config.Organizations.undergroundViaPortal', 'Legale Hülle (IG oder Verein) plus OOC-Angaben und Staff-Gate'],
     ['Wer sind die Beamten?', 'Config.Officials', 'Eigene Fraktion mit vier Rängen, mindestens 3 aktive Beamte vor dem Start'],
     ['Terminmodus', 'Config.Appointments.mode', 'hybrid: Live-Termine plus Sprechzeiten'],
-    ['Vier-Augen-Prinzip', 'Config.Decisions.fourEyes', 'Aus, bis es etwa fünf aktive Beamte gibt'],
-    ['Schriftliches Verfahren', 'Config.Appointments.writtenProcedure', 'An, nur Amtsleiter und Staff, nach 72 Stunden'],
+    ['Vier-Augen-Prinzip', 'Config.Decisions.fourEyes', 'Aus. Vorgesehen für Phase 2, in Version 1.0 ohne Wirkung'],
+    ['Schriftliches Verfahren', 'Config.Appointments.writtenProcedure', 'An. Der Staff entscheidet nach 72 Stunden ohne Termin'],
     ['Gebührenhöhe', 'Config.LegalForms', 'Mit den Standardwerten starten, nach zwei Wochen prüfen'],
-    ['Strikes und Sperren', 'Config.Appointments.strikes', '3 Strikes in 14 Tagen, 3 Tage Sperre'],
+    ['Strikes und Sperren', 'Config.Rules.strikeLimit, strikeDays, banDays', '3 Strikes in 14 Tagen, 3 Tage Sperre'],
     ['Härte beim Bestandsschutz', 'Config.Legacy', 'Nur Hinweis, keine Sanktion'],
-    ['Framework und Zusatzressourcen', 'Config.Framework', 'ESX und QBCore werden erkannt, Telefon und Inventar sind Adapter'],
+    ['Framework und Zusatzressourcen', 'Config.Framework', 'ESX, QBCore und Qbox werden erkannt. ox_inventory wird bevorzugt, ein Telefon hängt ihr über einen Hook an'],
+    ['Stammkapital und Firmenkonto', 'Config.Hooks.onApproved', 'Der Hook bucht das Kapital aufs Firmenkonto und gibt true zurück, sonst geht es an den Antragsteller zurück'],
     ['Gewerbeschein-Verlängerung', 'Config.Certificate', 'In Phase 2 nachziehen'],
   ];
 
