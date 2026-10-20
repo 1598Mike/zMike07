@@ -199,9 +199,9 @@
     const d = S.d;
     const tk = d.myTicket;
     S.ui.qtype = S.ui.qtype || 'beratung';
-    const opts = cfg().appointmentTypes.filter((t) => (t.key === 'beratung' || t.key.indexOf('vorstellung') === 0) && typeAvail(t).ok);
+    const opts = cfg().appointmentTypes.filter((t) => t.key === 'beratung');
     return html`
-      <div class="page-head"><div><div class="crumbs">Bürgeramt · Spontan</div><h1>Wartenummer</h1><p class="sub">Ohne Termin vorbeigekommen? Mit einer Wartenummer werden Sie der Reihe nach aufgerufen, solange ein Beamter im Dienst ist.</p></div></div>
+      <div class="page-head"><div><div class="crumbs">Bürgeramt · Spontan</div><h1>Wartenummer</h1><p class="sub">Ohne Termin vorbeigekommen? Mit einer Wartenummer werden Sie der Reihe nach aufgerufen, solange ein Beamter im Dienst ist. Für eine Vorstellung buchen Sie einen Live-Termin.</p></div></div>
       ${c.board(d)}
       ${tk ? html`<div class="stack">
           ${tk.called ? c.callout('warn', 'Sie werden aufgerufen', 'Ihre Nummer ' + tk.no + ' wird an Schalter ' + d.board.calling.desk + ' bedient. Bitte dorthin gehen.', 'bell') : ''}

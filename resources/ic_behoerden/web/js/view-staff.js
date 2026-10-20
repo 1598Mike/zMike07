@@ -136,11 +136,11 @@
       ['requireOfficials', 'Beamtenpflicht für Termine', 'Termine sind nur buchbar, wenn Beamte im Dienst sind oder Sprechzeiten bestehen. Das ist die Kernregel des Systems.'],
       ['writtenProcedure', 'Schriftliches Verfahren (Notfallregel)', 'Überfällige Anträge lassen sich nach Aktenlage entscheiden, wenn ' + cfg().rules.escalateHours + ' Stunden kein Termin möglich war.'],
       ['undergroundViaPortal', 'Untergrund-Fraktionen über das Portal', 'Gruppen melden eine legale Hülle an und geben OOC-Angaben ab. Aus: Untergrund-Fraktionen werden komplett OOC vergeben.'],
-      ['fourEyes', 'Vier-Augen-Prinzip für Organisationen', 'Entscheidungen brauchen die Gegenzeichnung eines zweiten Beamten ab Rang Amtsleiter. Sinnvoll ab etwa fünf aktiven Beamten.'],
+      ['fourEyes', 'Vier-Augen-Prinzip für Organisationen', 'Entscheidungen brauchen die Gegenzeichnung eines zweiten Beamten ab Rang Amtsleiter. Sinnvoll ab etwa fünf aktiven Beamten.', true],
     ];
     return html`
       <div class="page-head"><div><div class="crumbs">Staff-Panel · Einstellungen</div><h1>Einstellungen</h1><p class="sub">Funktionen ein- und ausschalten. Änderungen wirken sofort und werden protokolliert.</p></div>${oocBadge}</div>
-      ${c.sheet('Funktionen', html`<ul class="checklist">${items.map((i) => html`<li><label><input type="checkbox" data-act="set-toggle" data-key="${i[0]}" ${st[i[0]] ? raw('checked') : ''}><span><span class="strong">${i[1]}</span><span class="ci-note" style="display:block;font-size:13.5px">${i[2]}</span></span></label></li>`)}</ul>`, { icon: 'gear' })}`;
+      ${c.sheet('Funktionen', html`<ul class="checklist">${items.map((i) => html`<li><label ${i[3] ? raw('style="cursor:default;opacity:.7"') : ''}><input type="checkbox" data-act="set-toggle" data-key="${i[0]}" ${st[i[0]] ? raw('checked') : ''} ${i[3] ? raw('disabled') : ''}><span><span class="strong">${i[1]}</span>${i[3] ? html` ${c.chip('Geplant für Phase 2', 'info')}` : ''}<span class="ci-note" style="display:block;font-size:13.5px">${i[2]}</span></span></label></li>`)}</ul>`, { icon: 'gear' })}`;
   }
 
   /* ---------- Aktionen ---------- */

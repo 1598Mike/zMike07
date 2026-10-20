@@ -440,6 +440,32 @@
     w.founders.forEach((x) => { x.share = base; });
     w.founders[0].share += 100 - base * n;
   }
+  /* Fragt solange nach, bis jeder eingeladene Mitgründer geantwortet hat. Die Antwort kommt vom Server, nie aus dem Browser. */
+  const pollTimer = { t: null };
+  function pollFounders() {
+    clearTimeout(pollTimer.t);
+    const w = W();
+    if (!w.founders.some((x) => x.consent === 'pending')) return;
+    pollTimer.t = setTimeout(async () => {
+      if (W() !== w || S.app !== 'gewerbeamt') return;
+      const r = await IC.api('founderStatus', {});
+      if (r && r.ok && W() === w) {
+        let changed = false;
+        w.founders.slice().forEach((f) => {
+          const st = r.statuses[f.charId];
+          if (f.consent !== 'pending') return;
+          if (st === 'ok') { f.consent = 'ok'; changed = true; IC.toast(f.name + ' hat zugestimmt.', 'ok'); }
+          else if (st === 'no' || st === 'expired') {
+            w.founders = w.founders.filter((x) => x !== f); evenShares(w); changed = 'render';
+            IC.toast(f.name + (st === 'no' ? ' hat die Einladung abgelehnt.' : ' hat nicht rechtzeitig geantwortet.'), 'warn');
+          }
+        });
+        if (changed === 'render') IC.render(); else if (changed) IC.refresh('wiz-founders', 'wiz-side', 'wiz-nav');
+      }
+      pollFounders();
+    }, 800);
+  }
+
   function fixRoles(w) {
     if (w.kind !== 'unternehmen') return;
     const single = w.legalForm === 'einzel';
@@ -479,21 +505,24 @@
     },
     'wiz-light': lightRefresh,
     'wiz-ooc-cat': () => { IC.refresh('wiz-ooc-hint'); },
-    'wiz-add-founder': (el) => {
+    'wiz-add-founder': async (el) => {
       const w = W();
       const p = S.d.nearby.find((x) => x.charId === el.dataset.id);
       if (!p || w.founders.some((x) => x.charId === p.charId)) return;
+      const r = await IC.api('founderInvite', { charId: p.charId });
+      if (!r.ok) { IC.toast(r.error || 'Die Einladung ist nicht möglich.', 'bad'); return; }
       w.founders.push({ charId: p.charId, name: p.name, role: w.kind === 'fraktion' ? 'mitglied' : 'gesellschafter', share: w.kind === 'fraktion' ? null : 0, consent: 'pending' });
       evenShares(w);
       IC.render();
-      IC.toast('Einladung an ' + p.name + ' gesendet.', '');
-      setTimeout(() => {
-        const cur = W();
-        const f = cur.founders.find((x) => x.charId === p.charId);
-        if (cur === w && f && f.consent === 'pending') { f.consent = 'ok'; IC.refresh('wiz-founders', 'wiz-side', 'wiz-nav'); IC.toast(p.name + ' hat zugestimmt.', 'ok'); }
-      }, 1400);
+      IC.toast('Einladung an ' + p.name + ' gesendet. Die Zustimmung kommt direkt vom Mitgründer.', '');
+      pollFounders();
     },
-    'wiz-remove-founder': (el) => { const w = W(); w.founders.splice(Number(el.dataset.idx), 1); evenShares(w); IC.render(); },
+    'wiz-remove-founder': (el) => {
+      const w = W();
+      const f = w.founders[Number(el.dataset.idx)];
+      if (f && f.consent !== 'self') IC.api('founderCancel', { charId: f.charId });
+      w.founders.splice(Number(el.dataset.idx), 1); evenShares(w); IC.render();
+    },
     'wiz-even': () => { evenShares(W()); IC.render(); },
     'wiz-site-mode': (el) => { const w = W(); w.property = { mode: el.dataset.mode, id: null, label: '' }; IC.render(); },
     'wiz-prop': (el) => {

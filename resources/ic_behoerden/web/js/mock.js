@@ -61,8 +61,8 @@
     const until = Math.max.apply(null, a) + R.banDays * DAY;
     return until > now() ? until : null;
   }
-  function eligibility(p, kind, isMe) {
-    const open = s.applications.filter((a) => isOpenApp(a) && a.applicant.charId === p.charId).length;
+  function eligibility(p, kind, isMe, excludeAppId) {
+    const open = s.applications.filter((a) => isOpenApp(a) && a.applicant.charId === p.charId && a.id !== excludeAppId).length;
     const checks = [
       { key: 'id', ok: !!p.hasId, text: 'Gültiger Personalausweis' },
       { key: 'age', ok: p.age >= R.minAge, text: 'Mindestalter ' + R.minAge + ' Jahre (IC)' },
@@ -183,18 +183,20 @@
       ap.status = 'beamter_ausfall';
       const a = ap.applicationId ? appById(ap.applicationId) : null;
       if (a && a.status === 'termin_gebucht') {
-        a.status = 'vorpruefung_ok';
+        a.status = a.restoreStatus || 'vorpruefung_ok';
         a.priority = true;
-        pushEvent(a, 'vorpruefung_ok', 'System', 'system', 'Termin ausgefallen: kein Beamter im Dienst', 'Ein Ersatztermin kann mit Vorrang gebucht werden.');
+        pushEvent(a, a.status, 'System', 'system', 'Termin ausgefallen: kein Beamter im Dienst', 'Ein Ersatztermin kann mit Vorrang gebucht werden.');
       }
       audit('System', 'system', 'Beamten-Ausfall', ap.id, 'Kein Beamter zum Terminbeginn im Dienst, kein Strike');
       if (ap.booker === s.me.charId) notice('Ihr Termin um ' + IC.ftime(ap.start) + ' Uhr ist ausgefallen, weil kein Beamter im Dienst war. Sie erhalten Vorrang bei einem Ersatztermin.', 'warn');
     });
     s.applications.forEach((a) => {
       if (a.status === 'nachbesserung' && t > lastTs(a) + R.fixDays * DAY) {
-        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Frist zur Nachbesserung abgelaufen');
+        refund(a);
+        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Frist zur Nachbesserung abgelaufen', 'Verwahrte Beträge wurden erstattet, die Antragsgebühr nicht.');
       } else if (a.status === 'vorpruefung_ok' && t > (a.vorpruefungAt || lastTs(a)) + R.bookDays * DAY) {
-        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Kein Termin innerhalb von ' + R.bookDays + ' Tagen gebucht');
+        refund(a);
+        a.status = 'abgelaufen'; pushEvent(a, 'abgelaufen', 'System', 'system', 'Kein Termin innerhalb von ' + R.bookDays + ' Tagen gebucht', 'Verwahrte Beträge wurden erstattet, die Antragsgebühr nicht.');
       }
     });
   }
@@ -345,7 +347,7 @@
     if (!f) return fail('Rechtsform fehlt.');
     const prev = d.id ? appById(d.id) : null;
     const resubmit = !!(prev && prev.status === 'nachbesserung');
-    const el = eligibility(s.me, d.kind, true);
+    const el = eligibility(s.me, d.kind, true, resubmit ? prev.id : null);
     if (!el.ok) errors.push({ field: 'elig', text: 'Voraussetzungen nicht erfüllt: ' + el.checks.filter((c) => !c.ok).map((c) => c.text).join('; ') });
     const nc = nameCheck(d.name, d.legalForm, d.id);
     if (!nc.ok) errors.push({ field: 'name', text: nc.issues.filter((i) => i.level === 'error').map((i) => i.text)[0] });
@@ -473,6 +475,23 @@
     return ok({ rows });
   };
 
+  /* ----- Mitgründer einladen (im Spiel antwortet der eingeladene Spieler, hier nach kurzer Zeit automatisch) ----- */
+  H.founderInvite = (p) => {
+    const person = s.nearby.find((x) => x.charId === p.charId);
+    if (!person) return fail('Diese Person ist nicht in Ihrer Nähe.');
+    const el = eligibility(person, 'unternehmen', false);
+    if (!el.ok) return fail(person.name + ' erfüllt die Voraussetzungen nicht: ' + el.checks.filter((c) => !c.ok).map((c) => c.text).join('; ') + '.');
+    s.invites = s.invites || {};
+    s.invites[p.charId] = { at: Date.now() };
+    return ok();
+  };
+  H.founderStatus = () => {
+    const statuses = {};
+    Object.keys(s.invites || {}).forEach((id) => { statuses[id] = Date.now() - s.invites[id].at >= 1200 ? 'ok' : 'pending'; });
+    return ok({ statuses });
+  };
+  H.founderCancel = (p) => { if (s.invites) delete s.invites[p.charId]; return ok(); };
+
   /* ----- Bürgeramt ----- */
   H.slotsList = (p) => {
     const type = typeOf(p.typeId);
@@ -530,7 +549,7 @@
       status: 'gebucht', booker: s.me.charId, bookerName: s.me.name, attendees: att, official: null, note: String(p.note || '').slice(0, 200), source: slot.source, createdAt: now(),
     };
     s.appointments.push(ap);
-    if (app) { app.status = 'termin_gebucht'; app.apptId = ap.id; app.priority = false; pushEvent(app, 'termin_gebucht', s.me.name, 'bürger', 'Vorstellungstermin gebucht', IC.fdt(ap.start) + ' Uhr'); }
+    if (app) { if (app.status !== 'termin_gebucht') app.restoreStatus = app.status; app.status = 'termin_gebucht'; app.apptId = ap.id; app.priority = false; pushEvent(app, 'termin_gebucht', s.me.name, 'bürger', 'Vorstellungstermin gebucht', IC.fdt(ap.start) + ' Uhr'); }
     audit(s.me.name, 'bürger', 'Termin gebucht', ap.id, type.label + ', ' + IC.fdt(ap.start));
     return ok({ id: ap.id });
   };
@@ -543,7 +562,7 @@
     if (late) s.me.strikes.push(now());
     ap.status = 'abgesagt';
     const a = ap.applicationId ? appById(ap.applicationId) : null;
-    if (a && a.status === 'termin_gebucht') { a.status = 'vorpruefung_ok'; pushEvent(a, 'vorpruefung_ok', s.me.name, 'bürger', 'Termin abgesagt'); }
+    if (a && a.status === 'termin_gebucht') { a.status = a.restoreStatus || 'vorpruefung_ok'; pushEvent(a, a.status, s.me.name, 'bürger', 'Termin abgesagt'); }
     audit(s.me.name, 'bürger', 'Termin abgesagt', ap.id, late ? 'Kurzfristig, 1 Strike' : 'Rechtzeitig');
     return ok({ strike: late });
   };
@@ -677,7 +696,7 @@
     ap.status = p.excused ? 'abgesagt' : 'nicht_erschienen';
     if (!p.excused && ap.booker === s.me.charId) s.me.strikes.push(now());
     const a = ap.applicationId ? appById(ap.applicationId) : null;
-    if (a && a.status === 'termin_gebucht') { a.status = 'vorpruefung_ok'; pushEvent(a, 'vorpruefung_ok', s.meOfficial.name, 'beamter', p.excused ? 'Termin entschuldigt' : 'Gründer nicht erschienen'); }
+    if (a && a.status === 'termin_gebucht') { a.status = a.restoreStatus || 'vorpruefung_ok'; pushEvent(a, a.status, s.meOfficial.name, 'beamter', p.excused ? 'Termin entschuldigt' : 'Gründer nicht erschienen'); }
     audit(s.meOfficial.name, 'beamter', p.excused ? 'Entschuldigt' : 'Nicht erschienen', ap.id, ap.bookerName);
     return ok();
   };
@@ -803,6 +822,7 @@
     const a = appById(p.id);
     if (!a || a.status !== 'staff_pruefung') return fail('Dieser Antrag wartet nicht auf die Schlussprüfung.');
     if (p.decision === 'freigeben') {
+      if (a.ooc && a.ooc.category === 'untergrund' && s.staff.undergroundCap.used >= s.staff.undergroundCap.max) return fail('Alle Untergrund-Plätze sind belegt. Erhöhen Sie die Kapazität oder weisen Sie den Antrag zurück.');
       registerEntity(a, 'Registerführung');
       audit('Staff', 'staff', 'Freigabe', a.caseNo, a.name);
       return ok();

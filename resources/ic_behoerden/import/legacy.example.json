@@ -1,0 +1,37 @@
+[
+  {
+    "ref": "alt-001",
+    "name": "Lenas Kiosk",
+    "kind": "unternehmen",
+    "legalForm": "einzel",
+    "branch": "handel",
+    "hq": "Vespucci Boulevard 12, Vespucci",
+    "founded": 1735689600000,
+    "members": [
+      { "charId": "char1:0a1b2c3d", "name": "Lena Brandt", "role": "inhaber", "share": 100 }
+    ]
+  },
+  {
+    "ref": "alt-002",
+    "name": "Rossi Bau",
+    "kind": "unternehmen",
+    "legalForm": "gmbh",
+    "branch": "handwerk",
+    "members": [
+      { "charId": "char1:4e5f6a7b", "name": "Marco Rossi", "role": "geschaeftsfuehrer", "share": 60 },
+      { "charId": "char1:8c9d0e1f", "name": "Tom Becker", "role": "gesellschafter", "share": 40 }
+    ]
+  },
+  {
+    "ref": "alt-003",
+    "name": "Hafenclub Los Santos",
+    "kind": "fraktion",
+    "legalForm": "ig",
+    "ooc": "untergrund",
+    "members": [
+      { "charId": "char1:4e5f6a7b", "name": "Marco Rossi", "role": "vorsitz" },
+      { "charId": "char1:8c9d0e1f", "name": "Tom Becker", "role": "mitglied" },
+      { "charId": "char1:0a1b2c3d", "name": "Lena Brandt", "role": "mitglied" }
+    ]
+  }
+]
