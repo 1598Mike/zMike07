@@ -1,0 +1,7 @@
+# Build-Produkt für die Veröffentlichung, wird mit `node tools/build-preview.js --fragment` erzeugt
+vorschau/*.fragment.html
+
+# Werkzeuge und Editor
+node_modules/
+.DS_Store
+*.log
