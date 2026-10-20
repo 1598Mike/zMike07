@@ -11,7 +11,7 @@ IC.bridge = B
 H.bridge = B
 
 local function resetBridge()
-    B.players, B.notices, B.certificates, B.invitesAsked, B.treasury, B.emitted, B.hooks = {}, {}, {}, {}, 0, {}, {}
+    B.players, B.notices, B.certificates, B.invitesAsked, B.treasury, B.emitted, B.hooks, B.httpCalls = {}, {}, {}, {}, 0, {}, {}, {}
 end
 resetBridge()
 
@@ -60,6 +60,7 @@ function B.notify(src, text, kind) B.notices[#B.notices + 1] = { src = src, text
 function B.askInvite(targetSrc, fromName) B.invitesAsked[#B.invitesAsked + 1] = { src = targetSrc, from = fromName } end
 function B.giveCertificate(src, e) B.certificates[#B.certificates + 1] = { src = src, regNo = e.regNo }; return true end
 function B.emit(event, ...) B.emitted[#B.emitted + 1] = event end
+function B.http(url, payload) B.httpCalls[#B.httpCalls + 1] = { url = url, payload = payload } end
 
 -- Hilfen für Tests --------------------------------------------------------------
 function H.lastNotice(src, pattern)

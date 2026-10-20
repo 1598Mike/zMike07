@@ -292,7 +292,8 @@
     const apps = s.applications;
     const decided = apps.filter((a) => ['genehmigt', 'abgelehnt'].indexOf(a.status) !== -1);
     const rejected = decided.filter((a) => a.status === 'abgelehnt').length;
-    const escalations = apps.filter((a) => a.status === 'vorpruefung_ok' && t - (a.vorpruefungAt || lastTs(a)) > R.escalateHours * HOUR);
+    const waitingSince = (a) => (a.status === 'vorpruefung_ok' ? a.vorpruefungAt || lastTs(a) : a.status === 'einspruch' ? lastTs(a) : null);
+    const escalations = apps.filter((a) => waitingSince(a) != null && t - waitingSince(a) > R.escalateHours * HOUR);
     const gate = apps.filter((a) => a.status === 'staff_pruefung');
     const finished = s.appointments.filter((a) => ['abgeschlossen', 'nicht_erschienen', 'beamter_ausfall'].indexOf(a.status) !== -1);
     const noShow = finished.filter((a) => a.status === 'nicht_erschienen').length;
@@ -313,7 +314,7 @@
       },
       gate: gate.map((a) => Object.assign(IC.clone(a), { hints: gateHints(a) })),
       entities: s.entities.map((e) => IC.clone(e)).sort((a, b) => a.name.localeCompare(b.name, 'de')),
-      escalations: escalations.map((a) => stripOoc(a)),
+      escalations: escalations.map((a) => Object.assign(stripOoc(a), { waitingSince: waitingSince(a) })),
       caps, undergroundCap: s.staff.undergroundCap,
       blacklist: s.staff.blacklist.slice(),
       settings: Object.assign({}, s.staff.settings),
@@ -734,7 +735,7 @@
     const ap = apptById(p.id);
     if (!ap || ap.status !== 'laeuft') return fail('Der Termin muss laufen, bevor entschieden werden kann.');
     const type = typeOf(ap.typeId);
-    const r = needRank('sachbearbeiter') || needRank(type.minRank);
+    const r = needRank(type.minRank);
     if (r) return r;
     const reason = String(p.reason || '').trim();
     const conds = (p.conditions || []).map((c) => String(c).trim()).filter(Boolean);
@@ -784,7 +785,7 @@
         pushEvent(a, 'nachbesserung', o.name, 'beamter', 'Vertagt, Nachbesserung erforderlich', reason);
         outcome = 'vertagt';
       } else {
-        a.status = 'abgelehnt'; a.objectionUntil = now() + R.objectionHours * HOUR; refund(a);
+        a.status = 'abgelehnt'; a.objectionUntil = objection ? 0 : now() + R.objectionHours * HOUR; refund(a);
         pushEvent(a, 'abgelehnt', o.name, 'beamter', 'Antrag abgelehnt', reason);
         outcome = 'abgelehnt';
       }
@@ -871,7 +872,8 @@
   H.staffWritten = (p) => {
     if (!s.staff.settings.writtenProcedure) return fail('Das schriftliche Verfahren ist abgeschaltet.');
     const a = appById(p.id);
-    if (!a || a.status !== 'vorpruefung_ok') return fail('Dieser Antrag ist nicht für das schriftliche Verfahren geeignet.');
+    if (!a || (a.status !== 'vorpruefung_ok' && a.status !== 'einspruch')) return fail('Dieser Antrag ist nicht für das schriftliche Verfahren geeignet.');
+    const objection = a.status === 'einspruch';
     const reason = String(p.reason || '').trim();
     if (reason.length < 10) return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).');
     a.decision = { decision: p.decision, reason, by: 'Behörde (nach Aktenlage)', at: now(), conditions: [] };

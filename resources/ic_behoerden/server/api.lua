@@ -98,10 +98,13 @@ function API.bootstrap(ctx, p)
             id = ctx.off.id, name = ctx.off.name, rank = ctx.off.rank, dienstnr = ctx.off.dienstnr,
             state = mineD and mineD.state or 'off', desk = mineD and mineD.desk or 1, onDuty = mineD ~= nil and mineD.state == 'on', level = R.rankLevel(ctx.off.rank),
         }
-        local apps = S.list('applications', function(a) return not A.conflicted(a, ctx.off.id) end)
-        out.officialApps = U.map(U.sortBy(apps, lastTs, true), IC.register.stripOoc)
+        -- Das Tablet braucht die offenen Anträge und die zu den gezeigten Terminen. Abgeschlossene bleiben draußen, damit die Antwort mit den Jahren nicht wächst.
         local cutoff = IC.now() - R.DAY
         local appts = S.list('appointments', function(a) return R.OPEN_APPT[a.status] or a.start > cutoff end)
+        local shown = {}
+        for _, ap in ipairs(appts) do if ap.applicationId then shown[ap.applicationId] = true end end
+        local apps = S.list('applications', function(a) return (R.isOpenApp(a) or shown[a.id]) and not A.conflicted(a, ctx.off.id) end)
+        out.officialApps = U.map(U.sortBy(apps, lastTs, true), IC.register.stripOoc)
         out.officialAppts = U.map(U.sortBy(appts, function(a) return a.start end), P.view)
         out.queue = U.deepcopy(IC.queue.list)
         out.hours = U.map(U.sortBy(S.list('officeHours', function(h) return h.finish > IC.now() end), function(h) return h.start end), function(h)

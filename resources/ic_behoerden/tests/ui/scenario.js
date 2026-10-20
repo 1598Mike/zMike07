@@ -248,7 +248,8 @@ module.exports = async ({ lua, actor, openApp, log, assert }) => {
   await keller.locator('tr', { hasText: 'Rossi Reparaturen' }).locator('[data-act="rev-open"]').click();
   await keller.fill('#rev-msg', 'Der Zweck ist aus Sicht der Behörde unzulässig.');
   await keller.click('[data-act="rev-do"][data-result="abgelehnt"]'); await keller.settle();
-  assert.strictEqual(await S(keller, () => IC.S.d.officialApps.find((a) => a.name.startsWith('Rossi Reparaturen')).status), 'abgelehnt');
+  assert.strictEqual((await lua.call('dump')).applications.find((a) => a.name.startsWith('Rossi Reparaturen')).status, 'abgelehnt');
+  assert(!(await S(keller, () => IC.S.d.officialApps.some((a) => a.name.startsWith('Rossi Reparaturen')))), 'abgeschlossene Anträge sind nicht mehr in der Antwort des Tablets');
   log('Antrag abgelehnt');
 
   // Tom bessert nach und reicht erneut ein
@@ -329,11 +330,19 @@ module.exports = async ({ lua, actor, openApp, log, assert }) => {
   await go(admin, 'staff', 'esc');
   const esc = await admin.locator('.main').innerText();
   assert(/Becker Logistik/.test(esc) && /Eskalation/.test(esc), 'Eskalation sichtbar: ' + esc.slice(0, 200).replace(/\n/g, ' '));
-  await admin.click('[data-act="esc-open"]');
+  assert(/Rossi Reparaturen/.test(esc) && /Einspruch/.test(esc), 'auch der liegengebliebene Einspruch ist eine Eskalation');
+  await admin.locator('tr', { hasText: 'Becker Logistik' }).locator('[data-act="esc-open"]').click();
   await admin.fill('#ew-reason', 'Nach Aktenlage unbedenklich, alle Unterlagen vollständig.');
   await admin.click('[data-act="esc-send"]'); await admin.settle();
   assert.strictEqual(await S(admin, () => IC.S.d.staff.applicationsAll.find((a) => a.name.startsWith('Becker Logistik')).status), 'genehmigt');
   log('Eskalation: Entscheidung nach Aktenlage, Becker Logistik eingetragen');
+  await admin.locator('tr', { hasText: 'Rossi Reparaturen' }).locator('[data-act="esc-open"]').click();
+  await admin.selectOption('#ew-dec', 'abgelehnt');
+  await admin.fill('#ew-reason', 'Die Ablehnung bleibt nach Aktenlage bestehen.');
+  await admin.click('[data-act="esc-send"]'); await admin.settle();
+  const rossi = (await lua.call('dump')).applications.find((a) => a.name.startsWith('Rossi Reparaturen'));
+  assert(rossi.status === 'abgelehnt' && rossi.objectionUntil === 0, 'Einspruch nach Aktenlage entschieden, endgültig: ' + rossi.status);
+  log('Liegengebliebener Einspruch: Staff entscheidet nach Aktenlage, endgültig');
 
   await go(keller, 'beamte', 'breg');
   await keller.locator('tr', { hasText: 'Mustermann Bau' }).locator('[data-act="sanction-open"]').click();

@@ -296,7 +296,7 @@ Damit das System nicht stillsteht:
 
 | Zeit ohne buchbaren Termin | Folge |
 |----------------------------|-------|
-| ab **72 Stunden** nach bestandener Vorprüfung | Der Antrag erscheint im Staff-Panel als **„Eskalation“** |
+| ab **72 Stunden** nach bestandener Vorprüfung oder nach einem Einspruch ohne Termin | Der Antrag erscheint im Staff-Panel als **„Eskalation“**, der Staff bekommt einmal eine Discord-Meldung |
 | danach | Der Staff kann **nach Aktenlage entscheiden** (schriftliches Verfahren). IC ist das ein Bescheid der Behörde ohne Termin. Eine Begründung ist Pflicht. Auch Sicherheits- und Finanzbranche sowie Untergrund-Fraktionen laufen danach noch durch die Schlussprüfung. |
 
 Das schriftliche Verfahren ist **abschaltbar** (`Config.Appointments.writtenProcedure`).
@@ -325,7 +325,7 @@ die Gründer erklären ihr Konzept.
    [Gründer-Leitfaden](GRUENDER-LEITFADEN.md).
 3. Der Beamte stellt Fragen (Fragenkatalog im [Beamten-Handbuch](BEAMTEN-HANDBUCH.md)) und arbeitet die **Checkliste** ab.
 4. Der Beamte notiert, wählt die **Entscheidung** und gibt eine **Begründung** ein.
-5. Das System erzeugt den **Bescheid** (Dokument), druckt ihn mit Dienststempel und stellt ihn zu.
+5. Das System erzeugt den **Bescheid**: Er steht mit Stempel, Begründung und Namen des Beamten in der Akte des Gründers, der Gründer wird benachrichtigt.
 6. Bei Genehmigung wird die Eintragung ausgelöst.
 
 ### 7.2 Checkliste (Unternehmen)
@@ -528,7 +528,7 @@ Das Terminal zeigt freie Plätze an („3 von 8 frei“).
 - **Befangenheit:** Ein Beamter darf keinen Antrag bearbeiten, in dem er selbst als Gründer, Gesellschafter oder
   Mitglied steht. Das System sperrt das automatisch. Zusätzlich gibt es „Befangenheit melden“ (zum Beispiel
   bei Verwandtschaft oder Konkurrenz im Rollenspiel).
-- **Einspruch:** 48 Stunden nach Ablehnung. Ein Amtsleiter prüft.
+- **Einspruch:** 48 Stunden nach Ablehnung. Ein Amtsleiter prüft. Wer abgelehnt hat, ist im Einspruch befangen und darf ihn nicht entscheiden. Bleibt der Einspruch 72 Stunden liegen, entscheidet der Staff nach Aktenlage, endgültig.
 - **Protokoll:** Jede Statusänderung steht im Audit-Log (wer, wann, von welchem Status auf welchen, warum).
 
 IC-Korruption (zum Beispiel Bestechung) ist eine Frage eurer Serverregeln. Das System liefert dafür die

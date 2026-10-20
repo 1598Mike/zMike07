@@ -21,8 +21,14 @@ local function say(src, text, kind)
     if src == 0 then print('[ic_behoerden] ' .. text) else IC.bridge.notify(src, text, kind or 'info') end
 end
 
+-- Millisekunden für das Rate-Limit. GetGameTimer gibt es nicht in jeder Artifact-Version auf dem Server.
+local function clockMs()
+    if GetGameTimer then return GetGameTimer() end
+    return math.floor(os.clock() * 1000)
+end
+
 local function rateOk(src)
-    local now = GetGameTimer()
+    local now = clockMs()
     local list = N.calls[src]
     if not list then list = {}; N.calls[src] = list end
     while #list > 0 and now - list[1] > WINDOW_MS do table.remove(list, 1) end

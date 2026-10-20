@@ -34,14 +34,16 @@ function Sf.gate(ctx, p)
     return ok()
 end
 
--- Notfallregel: Entscheidung nach Aktenlage für Anträge, die zu lange auf einen Termin warten
+-- Notfallregel: Entscheidung nach Aktenlage für Anträge, die zu lange auf einen Termin warten (nach der Vorprüfung oder nach einem Einspruch)
 function Sf.written(ctx, p)
     if not IC.settings.get('writtenProcedure') then return fail('Das schriftliche Verfahren ist abgeschaltet.') end
     local a = S.get('applications', tostring(p.id or ''))
-    if not a or a.status ~= 'vorpruefung_ok' then return fail('Dieser Antrag ist nicht für das schriftliche Verfahren geeignet.') end
-    if IC.now() - (a.vorpruefungAt or A.lastTs(a)) <= Config.Rules.escalateHours * R.HOUR then
+    local since = a and A.waitingSince(a)
+    if not since then return fail('Dieser Antrag ist nicht für das schriftliche Verfahren geeignet.') end
+    if IC.now() - since <= Config.Rules.escalateHours * R.HOUR then
         return fail('Dieser Antrag ist noch nicht überfällig (Frist: ' .. Config.Rules.escalateHours .. ' Stunden).')
     end
+    local objection = a.status == 'einspruch'
     local reason = U.ucut(U.trim(p.reason or ''), 1000)
     if U.ulen(reason) < 10 then return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).') end
     if p.decision ~= 'genehmigt' and p.decision ~= 'abgelehnt' then return fail('Bitte genehmigen oder ablehnen.') end
@@ -54,7 +56,8 @@ function Sf.written(ctx, p)
             IC.register.create(a, 'Behörde')
         end
     else
-        a.objectionUntil = IC.now() + Config.Rules.objectionHours * R.HOUR
+        -- Nach einem Einspruch ist die Ablehnung endgültig
+        a.objectionUntil = objection and 0 or (IC.now() + Config.Rules.objectionHours * R.HOUR)
         A.refund(a)
         A.setStatus(a, 'abgelehnt', 'Behörde', 'staff', 'Entscheidung nach Aktenlage: abgelehnt', reason)
     end
@@ -202,7 +205,7 @@ function Sf.overview()
         end
         if a.status == 'genehmigt' and a.submittedAt then done = done + 1; days = days + (A.lastTs(a) - a.submittedAt) / R.DAY end
     end
-    local esc = U.sortBy(U.filter(apps, function(a) return a.status == 'vorpruefung_ok' and now - (a.vorpruefungAt or A.lastTs(a)) > Config.Rules.escalateHours * R.HOUR end), function(a) return a.vorpruefungAt or 0 end)
+    local esc = U.sortBy(U.filter(apps, function(a) local since = A.waitingSince(a); return since ~= nil and now - since > Config.Rules.escalateHours * R.HOUR end), function(a) return A.waitingSince(a) end)
     local gate = U.sortBy(U.filter(apps, function(a) return a.status == 'staff_pruefung' end), function(a) return A.lastTs(a) end)
     local finished = S.list('appointments', function(a) return a.status == 'abgeschlossen' or a.status == 'nicht_erschienen' or a.status == 'beamter_ausfall' end)
     local noShow, outage = 0, 0
@@ -222,10 +225,11 @@ function Sf.overview()
             rejectionRate = pct(rejected, decided), noShowRate = pct(noShow, #finished), outageRate = pct(outage, #finished),
             throughputDays = done > 0 and math.floor(days / done * 10 + 0.5) / 10 or 0, availabilityHours = Sf.availabilityHours(),
         },
-        gate = U.map(gate, function(a) local c = U.deepcopy(a); c.hints = Sf.gateHints(a); return c end), escalations = U.map(esc, IC.register.stripOoc),
+        gate = U.map(gate, function(a) local c = U.deepcopy(a); c.hints = Sf.gateHints(a); return c end), escalations = U.map(esc, function(a) local c = IC.register.stripOoc(a); c.waitingSince = A.waitingSince(a); return c end),
         entities = U.map(U.sortBy(S.list('entities'), function(e) return e.name:lower() end), U.deepcopy),
         caps = caps, undergroundCap = IC.undergroundCap(), blacklist = blacklist, settings = IC.settings.all(),
         audit = (function() local out = {} for i = 1, math.min(80, #IC.auditLog) do out[i] = IC.auditLog[i] end return out end)(),
-        applicationsAll = U.map(apps, IC.register.stripOoc),
+        -- nur, was die Übersicht zum Zählen braucht (die Listen für Schlussprüfung und Eskalationen stehen oben vollständig)
+        applicationsAll = U.map(apps, function(a) return { id = a.id, caseNo = a.caseNo, name = a.name, kind = a.kind, status = a.status } end),
     }
 end

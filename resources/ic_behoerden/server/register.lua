@@ -108,7 +108,7 @@ function G.create(app, via)
 
     local conds = {}
     for _, text in ipairs(app.decision and app.decision.conditions or {}) do
-        conds[#conds + 1] = { id = 'C-' .. IC.nextSeq('cond', 0), text = text, due = IC.now() + 14 * R.DAY, done = false }
+        conds[#conds + 1] = { id = 'C-' .. IC.nextSeq('cond', 0), text = text, due = IC.now() + Config.Rules.probationDays * R.DAY, done = false }
     end
 
     local leader = U.find(app.founders, function(x) return LEADER[x.role] end) or app.founders[1]

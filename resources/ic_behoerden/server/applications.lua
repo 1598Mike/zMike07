@@ -28,6 +28,12 @@ function A.lastTs(app)
     return e and e.ts or app.createdAt
 end
 
+-- Seit wann wartet der Antrag auf einen Termin? Nur nach bestandener Vorprüfung und nach einem Einspruch (sonst nil).
+function A.waitingSince(a)
+    if a.status == 'vorpruefung_ok' then return a.vorpruefungAt or A.lastTs(a) end
+    if a.status == 'einspruch' then return A.lastTs(a) end
+end
+
 function A.pushEvent(app, status, actor, actorKind, text, note)
     app.events[#app.events + 1] = { ts = IC.now(), status = status, actor = actor, actorKind = actorKind, text = text, note = note }
 end
@@ -39,10 +45,14 @@ function A.setStatus(app, to, actor, actorKind, text, note, eventStatus)
         return false
     end
     app.status = to
+    app.escalationSent = nil
     if R.OPEN_APP[to] then app.reservedUntil = IC.now() + Config.Rules.nameReserveDays * R.DAY end
     if text then A.pushEvent(app, eventStatus or to, actor, actorKind, text, note) end
     S.put('applications', app)
     IC.emit('ic_behoerden:applicationStatusChanged', app)
+    if to == 'staff_pruefung' then
+        IC.webhook('staff', 'Schlussprüfung wartet: ' .. (app.caseNo or app.id), (app.name or '') .. ' wartet auf die Freigabe im Staff-Panel.')
+    end
     return true
 end
 
@@ -294,6 +304,11 @@ function A.objection(ctx, p)
     local text = U.trim(p.text or '')
     if U.ulen(text) < 20 then return fail('Bitte den Einspruch mit mindestens 20 Zeichen begründen.') end
     text = U.ucut(text, 1000)
+    -- Wer abgelehnt hat, ist im Einspruchsverfahren befangen und darf nicht selbst darüber entscheiden
+    if a.decision and a.decision.byId then
+        a.conflicts = a.conflicts or {}
+        if not U.contains(a.conflicts, a.decision.byId) then a.conflicts[#a.conflicts + 1] = a.decision.byId end
+    end
     A.setStatus(a, 'einspruch', ctx.char.name, 'bürger', 'Einspruch eingelegt', text)
     IC.audit(ctx.char.name, 'bürger', 'Einspruch', a.caseNo, U.ucut(text, 80))
     return ok()
@@ -333,7 +348,7 @@ function A.review(ctx, p)
     elseif p.result == 'abgelehnt' then
         if U.ulen(msg) < 10 then return fail('Eine Ablehnung braucht eine Begründung (mindestens 10 Zeichen).') end
         a.objectionUntil = IC.now() + Config.Rules.objectionHours * R.HOUR
-        a.decision = { decision = 'abgelehnt', reason = msg, by = name, at = IC.now(), conditions = {} }
+        a.decision = { decision = 'abgelehnt', reason = msg, by = name, byId = ctx.off.id, at = IC.now(), conditions = {} }
         A.refund(a)
         A.setStatus(a, 'abgelehnt', name, 'beamter', 'Antrag abgelehnt', msg)
         IC.notify(a.applicant.charId, 'Der Antrag „' .. a.name .. '“ wurde abgelehnt. Einspruch ist ' .. Config.Rules.objectionHours .. ' Stunden lang möglich.', 'bad')
@@ -367,6 +382,11 @@ function A.tick()
         elseif a.status == 'vorpruefung_ok' and now > (a.vorpruefungAt or A.lastTs(a)) + r.bookDays * R.DAY then
             A.refund(a)
             A.setStatus(a, 'abgelaufen', 'System', 'system', 'Kein Termin innerhalb von ' .. r.bookDays .. ' Tagen gebucht')
+        elseif not a.escalationSent and A.waitingSince(a) and now - A.waitingSince(a) > r.escalateHours * R.HOUR then
+            -- Notfallregel: Der Staff erfährt es einmal per Webhook (im Panel steht der Antrag unter "Eskalationen")
+            a.escalationSent = true
+            S.put('applications', a)
+            IC.webhook('staff', 'Eskalation: ' .. a.caseNo, a.name .. ' wartet seit über ' .. r.escalateHours .. ' Stunden auf einen Termin (Notfallregel).')
         end
     end
 end

@@ -979,3 +979,116 @@ T.test('Bestandsschutz: Erinnerung nach 14 Tagen, auf Wunsch "ruhend", Bestätig
     T.eq(e.status, 'aktiv')
     Config.Legacy.restAfterDays = nil
 end)
+
+T.test('Discord: Meldungen an den Staff bei Antrag, Entscheidung, Schlussprüfung und Eskalation, öffentlich bei Eintragung', function()
+    cast()
+    duty(KELLER)
+    Config.Webhooks.staff, Config.Webhooks.public = 'https://example.invalid/staff', 'https://example.invalid/public'
+    local function titles(url)
+        local out = {}
+        for _, c in ipairs(H.bridge.httpCalls) do if c.url == url then out[#out + 1] = c.payload.embeds[1].title end end
+        return out
+    end
+    local r = T.succeeds(submit(LENA, draftEinzel('Webhook Bau')))
+    T.eq(titles('https://example.invalid/staff')[1], 'Neuer Antrag: ' .. r.caseNo)
+    T.eq(H.bridge.httpCalls[1].payload.embeds[1].footer.text, Config.City)
+    T.succeeds(H.call(KELLER, 'beamte', 'appReview', { id = r.id, result = 'ok' }))
+    T.eq(#titles('https://example.invalid/staff'), 1, 'die Vorprüfung meldet nichts')
+
+    -- 72 Stunden ohne Termin: eine Meldung, auch bei mehreren Takten
+    H.advance(73 * HOUR)
+    IC.tick(); IC.tick()
+    local staff = titles('https://example.invalid/staff')
+    T.eq(#staff, 2); T.eq(staff[2], 'Eskalation: ' .. r.caseNo)
+    T.eq(S.get('applications', r.id).escalationSent, true)
+
+    -- Schlussprüfung und öffentliche Bekanntmachung
+    local app = S.get('applications', r.id)
+    IC.apps.setStatus(app, 'termin_gebucht', 'T', 'system', 'x'); IC.apps.setStatus(app, 'termin_laeuft', 'T', 'system', 'x')
+    IC.apps.setStatus(app, 'staff_pruefung', 'T', 'system', 'x')
+    T.eq(titles('https://example.invalid/staff')[3], 'Schlussprüfung wartet: ' .. r.caseNo)
+    T.succeeds(H.staff('staffGate', { id = r.id, decision = 'freigeben' }))
+    T.eq(titles('https://example.invalid/public')[1], 'Neueintragung im Handelsregister')
+    Config.Webhooks.staff, Config.Webhooks.public = '', ''
+end)
+
+T.test('Auflagen: Frist kommt aus Config.Rules.probationDays', function()
+    cast()
+    duty(KELLER)
+    local old = Config.Rules.probationDays
+    Config.Rules.probationDays = 21
+    local r = toPreChecked(LENA, draftEinzel('Auflagen Bau'))
+    local b = T.succeeds((bookFirst(LENA, 'vorstellung_unternehmen', r.id)))
+    local ap = S.get('appointments', b.id)
+    T.succeeds(checkinAt(ap, LENA))
+    T.succeeds(H.call(KELLER, 'beamte', 'apptCall', { id = ap.id }))
+    T.succeeds(H.call(KELLER, 'beamte', 'apptStart', { id = ap.id }))
+    local all = {}
+    for _, i in ipairs(Config.Checklists.vorstellung_unternehmen) do all[i.key] = true end
+    T.succeeds(H.call(KELLER, 'beamte', 'apptDecide', { id = ap.id, decision = 'auflagen', reason = 'Mietvertrag nachreichen.', conditions = { 'Mietvertrag vorlegen' }, checklist = all }))
+    local e = S.get('entities', S.get('applications', r.id).entityId)
+    T.eq(e.status, 'probezeit')
+    T.eq(e.conditions[1].due, IC.now() + 21 * DAY, 'Frist 21 Tage')
+    Config.Rules.probationDays = old
+end)
+
+T.test('Anwärter: dürfen Beratungen führen und abschließen, aber nichts anderes entscheiden', function()
+    cast()
+    duty(NOVAK, 'on', 3)
+    local sl = T.succeeds(H.call(LENA, 'buergeramt', 'slotsList', { typeId = 'beratung', dayOffset = 0 }))
+    local start
+    for _, x in ipairs(sl.slots) do if x.free > 0 then start = x.start break end end
+    T.ok(start, 'mit einem Anwärter im Dienst gibt es Beratungs-Slots')
+    local b = T.succeeds(H.call(LENA, 'buergeramt', 'apptBook', { typeId = 'beratung', start = start }))
+    local ap = S.get('appointments', b.id)
+    T.succeeds(checkinAt(ap, LENA))
+    T.succeeds(H.call(NOVAK, 'beamte', 'apptCall', { id = ap.id }))
+    T.succeeds(H.call(NOVAK, 'beamte', 'apptStart', { id = ap.id }))
+    local all = {}
+    for _, i in ipairs(Config.Checklists.beratung) do all[i.key] = true end
+    local pay = H.bridge.players[NOVAK].bank
+    T.succeeds(H.call(NOVAK, 'beamte', 'apptDecide', { id = ap.id, decision = 'genehmigt', checklist = all }), 'Beratung abschließen')
+    T.eq(ap.status, 'abgeschlossen'); T.eq(H.bridge.players[NOVAK].bank, pay + 150, 'auch die Pauschale bekommt der Anwärter')
+
+    -- Vorstellungstermine bleiben Sachbearbeitern vorbehalten
+    duty(KELLER)
+    local r = toPreChecked(LENA, draftEinzel('Anwärter Bau'))
+    local b2 = T.succeeds((bookFirst(LENA, 'vorstellung_unternehmen', r.id)))
+    local ap2 = S.get('appointments', b2.id)
+    T.succeeds(checkinAt(ap2, LENA))
+    T.fails(H.call(NOVAK, 'beamte', 'apptStart', { id = ap2.id }), 'Sachbearbeiter')
+end)
+
+T.test('Einspruch: wer abgelehnt hat, ist befangen. Bleibt der Einspruch liegen, greift die Notfallregel', function()
+    cast(); duty(KELLER)
+    Config.Webhooks.staff = 'https://example.invalid/staff'
+    local r = T.succeeds(submit(LENA, draftEinzel('Befangen Bau')))
+    T.succeeds(H.call(KELLER, 'beamte', 'appReview', { id = r.id, result = 'abgelehnt', message = 'Der Zweck ist unzulässig laut Verwaltung.' }))
+    local app = appById(r.id)
+    T.eq(app.decision.byId, 'c-keller')
+    T.succeeds(H.call(LENA, 'gewerbeamt', 'appObjection', { id = r.id, text = 'Der Zweck ist legal, hier sind neue Nachweise für den Fall.' }))
+    T.ok(U.contains(app.conflicts, 'c-keller'), 'der ablehnende Beamte ist als befangen eingetragen')
+    T.fails(H.call(KELLER, 'beamte', 'appReview', { id = r.id, result = 'ok' }), 'wartet nicht auf die Vorprüfung')
+
+    -- Der einzige Amtsleiter darf die Verhandlung nicht führen
+    local b = T.succeeds((bookFirst(LENA, 'einspruch', r.id)))
+    local ap = S.get('appointments', b.id)
+    T.succeeds(checkinAt(ap, LENA))
+    T.fails(H.call(KELLER, 'beamte', 'apptStart', { id = ap.id }), 'befangen')
+
+    -- Liegt der Einspruch zu lange, kann der Staff nach Aktenlage entscheiden. Die Absage bringt den Antrag zurück in den Status "einspruch".
+    T.succeeds(H.call(LENA, 'buergeramt', 'apptCancel', { id = ap.id }))
+    T.eq(app.status, 'einspruch')
+    T.fails(H.staff('staffWritten', { id = r.id, decision = 'abgelehnt', reason = 'Zu früh für die Notfallregel.' }), 'noch nicht überfällig')
+    H.advance(73 * HOUR)
+    IC.tick()
+    local ov = T.succeeds(H.staff('bootstrap', { app = 'staff' }))
+    T.eq(#ov.staff.escalations, 1); T.eq(ov.staff.escalations[1].status, 'einspruch'); T.ok(ov.staff.escalations[1].waitingSince)
+    local titles = {}
+    for _, c in ipairs(H.bridge.httpCalls) do titles[#titles + 1] = c.payload.embeds[1].title end
+    T.ok(titles[#titles]:find('Eskalation', 1, true), 'Webhook meldet die Eskalation')
+    T.succeeds(H.staff('staffWritten', { id = r.id, decision = 'abgelehnt', reason = 'Die Ablehnung bleibt nach Aktenlage bestehen.' }))
+    T.eq(app.status, 'abgelehnt'); T.eq(app.objectionUntil, 0, 'nach einem Einspruch ist die Ablehnung endgültig')
+    T.fails(H.call(LENA, 'gewerbeamt', 'appObjection', { id = r.id, text = 'Noch einmal Einspruch, mit ausreichender Länge des Textes.' }), 'Einspruchsfrist')
+    Config.Webhooks.staff = ''
+end)

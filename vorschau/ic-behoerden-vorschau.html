@@ -1709,7 +1709,8 @@ html.nui .main { overflow-y: auto; }
     const apps = s.applications;
     const decided = apps.filter((a) => ['genehmigt', 'abgelehnt'].indexOf(a.status) !== -1);
     const rejected = decided.filter((a) => a.status === 'abgelehnt').length;
-    const escalations = apps.filter((a) => a.status === 'vorpruefung_ok' && t - (a.vorpruefungAt || lastTs(a)) > R.escalateHours * HOUR);
+    const waitingSince = (a) => (a.status === 'vorpruefung_ok' ? a.vorpruefungAt || lastTs(a) : a.status === 'einspruch' ? lastTs(a) : null);
+    const escalations = apps.filter((a) => waitingSince(a) != null && t - waitingSince(a) > R.escalateHours * HOUR);
     const gate = apps.filter((a) => a.status === 'staff_pruefung');
     const finished = s.appointments.filter((a) => ['abgeschlossen', 'nicht_erschienen', 'beamter_ausfall'].indexOf(a.status) !== -1);
     const noShow = finished.filter((a) => a.status === 'nicht_erschienen').length;
@@ -1730,7 +1731,7 @@ html.nui .main { overflow-y: auto; }
       },
       gate: gate.map((a) => Object.assign(IC.clone(a), { hints: gateHints(a) })),
       entities: s.entities.map((e) => IC.clone(e)).sort((a, b) => a.name.localeCompare(b.name, 'de')),
-      escalations: escalations.map((a) => stripOoc(a)),
+      escalations: escalations.map((a) => Object.assign(stripOoc(a), { waitingSince: waitingSince(a) })),
       caps, undergroundCap: s.staff.undergroundCap,
       blacklist: s.staff.blacklist.slice(),
       settings: Object.assign({}, s.staff.settings),
@@ -2151,7 +2152,7 @@ html.nui .main { overflow-y: auto; }
     const ap = apptById(p.id);
     if (!ap || ap.status !== 'laeuft') return fail('Der Termin muss laufen, bevor entschieden werden kann.');
     const type = typeOf(ap.typeId);
-    const r = needRank('sachbearbeiter') || needRank(type.minRank);
+    const r = needRank(type.minRank);
     if (r) return r;
     const reason = String(p.reason || '').trim();
     const conds = (p.conditions || []).map((c) => String(c).trim()).filter(Boolean);
@@ -2201,7 +2202,7 @@ html.nui .main { overflow-y: auto; }
         pushEvent(a, 'nachbesserung', o.name, 'beamter', 'Vertagt, Nachbesserung erforderlich', reason);
         outcome = 'vertagt';
       } else {
-        a.status = 'abgelehnt'; a.objectionUntil = now() + R.objectionHours * HOUR; refund(a);
+        a.status = 'abgelehnt'; a.objectionUntil = objection ? 0 : now() + R.objectionHours * HOUR; refund(a);
         pushEvent(a, 'abgelehnt', o.name, 'beamter', 'Antrag abgelehnt', reason);
         outcome = 'abgelehnt';
       }
@@ -2288,7 +2289,8 @@ html.nui .main { overflow-y: auto; }
   H.staffWritten = (p) => {
     if (!s.staff.settings.writtenProcedure) return fail('Das schriftliche Verfahren ist abgeschaltet.');
     const a = appById(p.id);
-    if (!a || a.status !== 'vorpruefung_ok') return fail('Dieser Antrag ist nicht für das schriftliche Verfahren geeignet.');
+    if (!a || (a.status !== 'vorpruefung_ok' && a.status !== 'einspruch')) return fail('Dieser Antrag ist nicht für das schriftliche Verfahren geeignet.');
+    const objection = a.status === 'einspruch';
     const reason = String(p.reason || '').trim();
     if (reason.length < 10) return fail('Bitte eine Begründung angeben (mindestens 10 Zeichen).');
     a.decision = { decision: p.decision, reason, by: 'Behörde (nach Aktenlage)', at: now(), conditions: [] };
@@ -4262,9 +4264,9 @@ html.nui .main { overflow-y: auto; }
     const list = ST().escalations;
     const on = ST().settings.writtenProcedure;
     return html`
-      <div class="page-head"><div><div class="crumbs">Staff-Panel · Notfallregel</div><h1>Eskalationen</h1><p class="sub">Anträge, die seit über ${cfg().rules.escalateHours} Stunden nach bestandener Vorprüfung auf einen Termin warten. Im schriftlichen Verfahren lässt sich nach Aktenlage entscheiden.</p></div>${oocBadge}</div>
+      <div class="page-head"><div><div class="crumbs">Staff-Panel · Notfallregel</div><h1>Eskalationen</h1><p class="sub">Anträge, die seit über ${cfg().rules.escalateHours} Stunden nach bestandener Vorprüfung oder nach einem Einspruch auf einen Termin warten. Im schriftlichen Verfahren lässt sich nach Aktenlage entscheiden.</p></div>${oocBadge}</div>
       ${on ? '' : c.callout('warn', 'Schriftliches Verfahren abgeschaltet', 'Unter „Einstellungen“ lässt es sich einschalten.', 'lock')}
-      ${c.sheet('Überfällige Anträge', list.length ? html`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Aktenzeichen</th><th>Name</th><th>Wartet seit</th><th></th></tr></thead><tbody>${list.map((a) => html`<tr><td>${c.tag(a.caseNo)}</td><td><div class="strong">${a.name}</div><div class="sub">${a.applicant.name}</div></td><td>${IC.dur(IC.now() - (a.vorpruefungAt || a.submittedAt))} ${c.chip('Eskalation', 'bad')}</td><td class="act"><button class="btn sm primary" data-act="esc-open" data-id="${a.id}" ${on ? '' : raw('disabled')}>Nach Aktenlage entscheiden</button></td></tr>`)}</tbody></table></div>` : c.empty('check', 'Keine Eskalationen', 'Alle Anträge mit bestandener Vorprüfung haben einen Termin oder sind noch in der Frist.'), { icon: 'clock', flush: !!list.length })}`;
+      ${c.sheet('Überfällige Anträge', list.length ? html`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Aktenzeichen</th><th>Name</th><th>Wartet seit</th><th></th></tr></thead><tbody>${list.map((a) => html`<tr><td>${c.tag(a.caseNo)}</td><td><div class="strong">${a.name}</div><div class="sub">${a.applicant.name}</div></td><td>${IC.dur(IC.now() - (a.waitingSince || a.vorpruefungAt || a.submittedAt))} ${c.chip(a.status === 'einspruch' ? 'Einspruch' : 'Eskalation', 'bad')}</td><td class="act"><button class="btn sm primary" data-act="esc-open" data-id="${a.id}" ${on ? '' : raw('disabled')}>Nach Aktenlage entscheiden</button></td></tr>`)}</tbody></table></div>` : c.empty('check', 'Keine Eskalationen', 'Alle Anträge mit bestandener Vorprüfung haben einen Termin oder sind noch in der Frist.'), { icon: 'clock', flush: !!list.length })}`;
   }
 
   /* ---------- Kapazitäten ---------- */

@@ -130,7 +130,7 @@ Config.Staff = {
 
 -- Discord. Leer lassen, um es abzuschalten.
 Config.Webhooks = {
-    staff = '',    -- Eingänge, Entscheidungen, Eskalationen
+    staff = '',    -- neue Anträge, Entscheidungen, Schlussprüfung wartet, Eskalation (Notfallregel)
     public = '',   -- Bekanntmachung neuer Eintragungen
 }
 

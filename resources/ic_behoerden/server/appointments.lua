@@ -401,7 +401,7 @@ function P.decide(ctx, p)
     if not ap or ap.status ~= 'laeuft' then return fail('Der Termin muss laufen, bevor entschieden werden kann.') end
     if not ap.official or ap.official.id ~= ctx.off.id then return fail('Dieser Termin wird von einem anderen Beamten geführt.') end
     local t = R.apptType(ap.typeId)
-    e = A.needRank(ctx, 'sachbearbeiter') or A.needRank(ctx, t.minRank)
+    e = A.needRank(ctx, t.minRank) -- die Beratung dürfen auch Anwärter abschließen, alles andere verlangt mindestens Sachbearbeiter (Config.AppointmentTypes)
     if e then return e end
 
     local dec = tostring(p.decision or '')
@@ -453,7 +453,7 @@ function P.decide(ctx, p)
             outcome = 'offen'
         end
     elseif app then
-        app.decision = { decision = dec, reason = reason, by = name, at = IC.now(), conditions = conds }
+        app.decision = { decision = dec, reason = reason, by = name, byId = ctx.off.id, at = IC.now(), conditions = conds }
         if t.key == 'einspruch' then
             if dec == 'genehmigt' or dec == 'auflagen' then
                 A.pushEvent(app, 'einspruch', name, 'beamter', 'Einspruch stattgegeben', reason ~= '' and reason or nil)
@@ -547,7 +547,7 @@ function P.sanction(ctx, p)
     ent.history = ent.history or {}
     ent.history[#ent.history + 1] = entry
     if p.level == 'auflage' then
-        ent.conditions[#ent.conditions + 1] = { id = 'C-' .. IC.nextSeq('cond', 0), text = reason, due = IC.now() + 14 * R.DAY, done = false }
+        ent.conditions[#ent.conditions + 1] = { id = 'C-' .. IC.nextSeq('cond', 0), text = reason, due = IC.now() + Config.Rules.probationDays * R.DAY, done = false }
     end
     S.put('entities', ent)
     if p.level == 'untersagung' then IC.register.setStatus(ent, 'gesperrt', ctx.off.name, reason) end
